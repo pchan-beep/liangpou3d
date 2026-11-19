@@ -1,3 +1,7 @@
+<!doctype html>
+<html lang="zh-HK">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>量舖 3D</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -114,10 +118,34 @@ textarea#io{width:100%;min-height:110px;border:1px solid var(--line);border-radi
 #arOverlay button.go{background:#f5c22e}
 
 @media (max-width:900px){
-  .app{grid-template-columns:1fr;grid-template-rows:auto auto auto;height:auto}
-  .stage{height:min(70vh,640px);grid-template-columns:1fr}
+  body{font-size:15px}
+  .app{display:flex;flex-direction:column;height:auto}
+  .top{padding-block:8px;gap:8px}
+  .brand{flex:1 1 100%;margin-right:0}
+  .brand input{width:100%;font-size:13px}
+  #viewSeg{flex:1}
+  #viewSeg button{flex:1}
+  .seg button{padding:8px 12px;font-size:14px}
+  .btn{padding:9px 13px;font-size:14px}
+  #undoBtn{position:absolute;top:calc(10px + env(safe-area-inset-top,0px));right:max(16px,env(safe-area-inset-right,0px))}
+  .top{position:relative}
+  .stage{height:calc(100svh - var(--toph,110px));min-height:420px;grid-template-columns:1fr}
   .stage[data-view="split"]{grid-template-rows:1fr 1fr}
-  .panel{border-left:0;border-top:1px solid var(--line);overflow:visible}
+  .chip{padding:8px 12px;font-size:14px;border-radius:9px}
+  .tag{display:none}
+  .fld{font-size:14px}
+  .fld input,.drawbar input{font-size:16px;padding:8px 9px}
+  .drawbar input{width:92px}
+  .drawbar .arrows button{width:46px;height:42px;font-size:18px}
+  .walls li{grid-template-columns:74px minmax(0,1fr)}
+  .walls li button{font-size:14px;padding:8px 0}
+  .addgrid button{padding:12px 4px;font-size:14px}
+  .panel{border-left:0;border-top:1px solid var(--line);overflow:visible;gap:22px}
+  .panel h2{font-size:13px}
+  .note,.ar p{font-size:13.5px}
+  .stats .big b{font-size:40px}
+  .stats dd{font-size:14px}
+  .stats dt{font-size:12px}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
@@ -215,6 +243,14 @@ textarea#io{width:100%;min-height:110px;border:1px solid var(--line);border-radi
         <textarea id="io" placeholder="貼上之前複製的 JSON 資料"></textarea>
         <button class="btn primary" id="importBtn">匯入</button>
       </div>
+      <h3>手機 ⇄ 電腦</h3>
+      <div class="btnrow">
+        <button class="btn primary" id="shareBtn" hidden>傳送專案檔</button>
+        <button class="btn" id="saveJsonBtn" hidden>儲存專案檔</button>
+        <label class="btn" for="openFile" style="display:inline-block">開啟專案檔</label>
+        <input type="file" id="openFile" accept=".json,application/json,text/plain" hidden>
+      </div>
+      <p class="note" style="margin-top:6px">手機量完撳「傳送專案檔」，經 WhatsApp／電郵傳個 .json 檔畀自己；電腦打開同一網址，撳「開啟專案檔」揀返個檔就可以繼續改。</p>
       <div class="btnrow" id="dlRow" style="margin-top:8px" hidden>
         <button class="btn" id="pngBtn">下載 3D 圖 PNG</button>
         <button class="btn" id="glbBtn">下載 3D 模型 GLB</button>
@@ -435,7 +471,7 @@ const S2W = (sx,sy) => ({x:(sx-view.ox)/view.scale, y:(sy-view.oy)/view.scale});
 function fit(){
   const W=cv.clientWidth, H=cv.clientHeight; if(!W||!H) return;
   const b=bounds(), bw=Math.max(b.x1-b.x0,1), bh=Math.max(b.y1-b.y0,1);
-  const pad=Math.min(80, W*0.14);
+  const pad=W<600?46:Math.min(80, W*0.14);
   view.scale=clamp(Math.min((W-pad*2)/bw,(H-pad*2-40)/bh),8,400);
   view.ox=(W-bw*view.scale)/2-b.x0*view.scale;
   view.oy=(H-bh*view.scale)/2-b.y0*view.scale+10;
@@ -450,8 +486,9 @@ function resizePlan(){
 }
 
 function pill(text, x, y, fg, bg, font){
-  ctx.font=font||'500 11.5px "JetBrains Mono",Consolas,monospace';
-  const tw=ctx.measureText(text).width, h=17;
+  const big=cv.clientWidth<600;
+  ctx.font=font||`500 ${big?13:11.5}px "JetBrains Mono",Consolas,monospace`;
+  const tw=ctx.measureText(text).width, h=big?20:17;
   ctx.fillStyle=bg; ctx.beginPath();
   if(ctx.roundRect) ctx.roundRect(x-tw/2-5,y-h/2,tw+10,h,4); else ctx.rect(x-tw/2-5,y-h/2,tw+10,h);
   ctx.fill();
@@ -553,7 +590,7 @@ function drawPlan(){
   if(mode==='select'){
     p.forEach((q,i)=>{
       const [x,y]=W2S(q.x,q.y), on=sel&&sel.kind==='vertex'&&sel.i===i;
-      ctx.beginPath(); ctx.arc(x,y,on?7:5,0,Math.PI*2); ctx.fillStyle=on?C.sel:C.panel; ctx.fill();
+      ctx.beginPath(); ctx.arc(x,y,(on?7:5)+(W<600?2:0),0,Math.PI*2); ctx.fillStyle=on?C.sel:C.panel; ctx.fill();
       ctx.lineWidth=2; ctx.strokeStyle=on?C.sel:C.wall; ctx.stroke();
       const w=ws[i], wp=ws[(i-1+p.length)%p.length];
       const ix=-(w.nx+wp.nx), iy=-(w.ny+wp.ny), il=Math.hypot(ix,iy)||1;
@@ -1148,6 +1185,26 @@ $('#dimBtn').onclick=e=>{ showDims=!showDims; e.currentTarget.setAttribute('aria
 let topLevel=false; try{ topLevel=window.top===window.self; }catch(e){ topLevel=false; }
 $('#dlRow').hidden=!topLevel; $('#dlNote').hidden=topLevel;
 function saveBlob(blob,name){ const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; document.body.append(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); },1000); }
+/* project file: share (phone) / save / open */
+const projFile=()=>{
+  const name=((S.name||'shop').replace(/[\\/:*?"<>|]/g,'_'))+'.json';
+  return new File([JSON.stringify(S,null,1)],name,{type:'application/json'});
+};
+$('#saveJsonBtn').hidden=!topLevel;
+$('#saveJsonBtn').onclick=()=>{ const f=projFile(); saveBlob(f,f.name); toast('已儲存 '+f.name); };
+const canShareFile=()=>{ try{ return topLevel && navigator.canShare && navigator.canShare({files:[projFile()]}); }catch(e){ return false; } };
+$('#shareBtn').hidden=!canShareFile();
+$('#shareBtn').onclick=async()=>{
+  const f=projFile();
+  try{ await navigator.share({files:[f],title:S.name||'量舖 3D 專案'}); }
+  catch(e){ if(e.name!=='AbortError'){ saveBlob(f,f.name); toast('未能分享，已改為儲存檔案'); } }
+};
+$('#openFile').addEventListener('change',e=>{
+  const f=e.target.files[0]; if(!f) return;
+  const rd=new FileReader();
+  rd.onload=()=>{ $('#io').value=rd.result; $('#importBtn').click(); e.target.value=''; };
+  rd.readAsText(f);
+});
 $('#pngBtn').onclick=()=>{
   if(stage.dataset.view==='plan') setView('split');
   ensure3D(); build3D(); R3.renderer.render(R3.scene,R3.camera);
@@ -1242,6 +1299,8 @@ async function startAR(){
 }
 
 /* ======================= boot ======================= */
+const topEl=$('.top');
+new ResizeObserver(()=>document.documentElement.style.setProperty('--toph',topEl.offsetHeight+'px')).observe(topEl);
 const ro=new ResizeObserver(()=>{ const first=!cv.width; resizePlan(); if(first) fit(); });
 ro.observe(cv);
 const mq=window.matchMedia('(prefers-color-scheme: dark)');
