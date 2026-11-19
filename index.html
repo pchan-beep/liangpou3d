@@ -69,6 +69,12 @@ button{cursor:pointer}
 .drawbar .arrows{display:inline-flex;gap:4px}
 .drawbar .arrows button{width:34px;height:32px;border:1px solid var(--line);border-radius:7px;background:var(--bg);font-size:15px}
 .drawbar p{margin:0;font-size:12px;color:var(--muted);flex-basis:100%}
+.photos{list-style:none;margin:10px 0 0;padding:0;display:grid;gap:8px}
+.photos li{display:grid;grid-template-columns:96px minmax(0,1fr) auto;gap:10px;align-items:center;padding:6px;border:1px solid var(--line);border-radius:10px;cursor:pointer}
+.photos li.on{border-color:var(--sel)}
+.photos img{width:96px;height:48px;object-fit:cover;border-radius:6px;display:block;background:var(--soft)}
+.photos b{font-size:13.5px;font-weight:500;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.photos small{color:var(--muted);font-size:12px;font-family:var(--font-mono)}
 .chip.walkcta{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:500}
 .walkui{position:absolute;inset:0;pointer-events:none;z-index:2}
 .walkhint{position:absolute;left:50%;transform:translateX(-50%);top:58px;margin:0;background:rgba(15,20,18,.72);color:#fff;font-size:12.5px;padding:6px 12px;border-radius:999px;white-space:nowrap;max-width:calc(100% - 24px);overflow:hidden;text-overflow:ellipsis;transition:opacity .6s}
@@ -201,6 +207,7 @@ textarea#io{width:100%;min-height:110px;border:1px solid var(--line);border-radi
         <button id="sbRotL" title="逆時針轉 90°">↺ 90°</button>
         <button id="sbRotR" title="順時針轉 90°">↻ 90°</button>
         <button id="sbRot15" title="順時針轉 15°">↻ 15°</button>
+        <button id="sbView">📷 睇實景</button>
         <button id="sbDup">複製</button>
         <button id="sbDel" class="del">刪除</button>
       </div>
@@ -223,6 +230,11 @@ textarea#io{width:100%;min-height:110px;border:1px solid var(--line);border-radi
         <button class="chip" data-cam="top" data-orbit>俯視</button>
         <button class="chip" data-cam="front" data-orbit>入口</button>
         <button class="chip" id="exitWalk" data-walk hidden>✕ 退出漫遊</button>
+        <button class="chip walkcta" id="photoBtn" hidden>📷 實景</button>
+        <button class="chip" id="modelBtn" data-wphoto hidden>🧱 模型</button>
+        <button class="chip" id="alignBtn" data-wphoto hidden aria-pressed="false">牆線對位</button>
+        <button class="chip" id="hdL" data-wphoto hidden title="相片向左轉 3°">◀</button>
+        <button class="chip" id="hdR" data-wphoto hidden title="相片向右轉 3°">▶</button>
         <button class="chip" id="tourBtn" data-walk hidden>360° 環視</button>
         <button class="chip" id="gyroBtn" data-walk hidden aria-pressed="false">陀螺儀</button>
         <button class="chip" id="fsBtn" data-walk hidden>全螢幕</button>
@@ -262,6 +274,15 @@ textarea#io{width:100%;min-height:110px;border:1px solid var(--line);border-radi
       <div class="addgrid" id="addItems"></div>
       <h3>門窗（加到已選牆，否則最長嗰幅）</h3>
       <div class="addgrid" id="addOpen"></div>
+    </section>
+    <section>
+      <h2>實景 360° 相</h2>
+      <p class="note">喺舖內企定，用 360 相機（Insta360、Ricoh Theta 等，匯出 2:1 全景 JPG）或者手機相機「全景」模式轉一圈影相，再加入。每個位置一張，就可以好似地產 VR 咁逐點睇。</p>
+      <div class="btnrow">
+        <label class="btn primary" for="photoFile" style="display:inline-block">＋ 加入實景相</label>
+        <input type="file" id="photoFile" accept="image/*" hidden>
+      </div>
+      <ul class="photos" id="photoList"></ul>
     </section>
     <section>
       <h2>實地量度 AR</h2>
@@ -343,7 +364,7 @@ const OPENINGS = {
 
 function sample(){
   return {
-    name:'範例：L 形地舖', unit:'m', height:3.2, wallT:0.15,
+    name:'範例：L 形地舖', unit:'m', height:3.2, wallT:0.15, photos:[],
     pts:[{x:0,y:0},{x:8,y:0},{x:8,y:4.5},{x:5,y:4.5},{x:5,y:7},{x:0,y:7}],
     openings:[
       {id:uid(),type:'shutter',wall:0,t:4,w:3.2,h:2.8,sill:0},
@@ -370,6 +391,7 @@ function sample(){
 let S;
 try { S = JSON.parse(store.get()); } catch(e){ S = null; }
 if (!S || !Array.isArray(S.pts) || S.pts.length < 3) S = sample();
+if (!Array.isArray(S.photos)) S.photos = [];
 let lastSnap = JSON.stringify(S);
 const hist = [];
 let sel = null;           // {kind:'item'|'opening'|'vertex'|'wall', id|i}
@@ -445,6 +467,7 @@ function selTarget(){
   if(!sel) return null;
   if(sel.kind==='item') return S.items.find(x=>x.id===sel.id);
   if(sel.kind==='opening') return S.openings.find(x=>x.id===sel.id);
+  if(sel.kind==='photo') return S.photos.find(x=>x.id===sel.id);
   if(sel.kind==='vertex') return S.pts[sel.i];
   if(sel.kind==='wall') return sel.i<S.pts.length ? walls()[sel.i] : null;
   return null;
@@ -495,6 +518,7 @@ function deleteSel(){
   if(!sel) return;
   if(sel.kind==='item') S.items=S.items.filter(x=>x.id!==sel.id);
   else if(sel.kind==='opening') S.openings=S.openings.filter(x=>x.id!==sel.id);
+  else if(sel.kind==='photo'){ if(walk.photo===sel.id) closePhoto(); S.photos=S.photos.filter(x=>x.id!==sel.id); }
   else if(sel.kind==='vertex'){ if(!deleteVertex(sel.i)) return; }
   else return;
   sel=null; commit();
@@ -645,6 +669,17 @@ function drawPlan(){
     });
   }
 
+  // 360 photo spots
+  (S.photos||[]).forEach(p=>{
+    const [x,y]=W2S(p.x,p.y), on=sel&&sel.kind==='photo'&&sel.id===p.id, cur=walk.photo===p.id, big=W<600;
+    const hr=p.heading*Math.PI/180, hx=-Math.sin(hr), hy=-Math.cos(hr), L=big?24:20;
+    ctx.strokeStyle=on?C.sel:'#7a3fd1'; ctx.lineWidth=2.5;
+    ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo(x+hx*L,y+hy*L); ctx.stroke();
+    ctx.beginPath(); ctx.arc(x,y,big?12:10,0,Math.PI*2); ctx.fillStyle=cur?'#7a3fd1':(on?C.sel:C.panel); ctx.fill(); ctx.stroke();
+    ctx.fillStyle=(cur||on)?'#fff':'#7a3fd1'; ctx.fillRect(x-6,y-4,12,8); ctx.beginPath(); ctx.arc(x,y,2.6,0,Math.PI*2); ctx.fillStyle=(cur||on)?'#7a3fd1':C.panel; ctx.fill();
+    if(sc>30||on) pill(p.name,x,y+(big?24:20),'#fff',on?C.sel:'#7a3fd1');
+  });
+
   // walker position on the plan (minimap)
   if(walk.on&&R3){
     const [x,y]=W2S(walk.x,walk.z), hd=walk.gyro?camHeading():walk.yaw;
@@ -684,6 +719,7 @@ function hitTest(sx, sy, touch){
     const it=S.items.find(x=>x.id===sel.id);
     if(it){ const hp=rotHandlePos(it); if(Math.hypot(hp.x-sx,hp.y-sy)<=(touch?24:14)) return {kind:'rotate',id:it.id}; }
   }
+  for(const p of (S.photos||[])){ const [x,y]=W2S(p.x,p.y); if(Math.hypot(x-sx,y-sy)<=(touch?22:13)) return {kind:'photo',id:p.id}; }
   for(let i=0;i<S.pts.length;i++){ const [x,y]=W2S(S.pts[i].x,S.pts[i].y); if(Math.hypot(x-sx,y-sy)<=R) return {kind:'vertex',i}; }
   const ws=walls();
   for(const o of S.openings){
@@ -753,6 +789,7 @@ cv.addEventListener('pointerdown', e=>{
   if(h){
     if(h.kind!=='rotate') sel = h.kind==='wall' ? {kind:'wall',i:h.i} : h;
     if(h.kind==='rotate'){ const it=S.items.find(x=>x.id===h.id); drag={kind:'rotate',it}; }
+    else if(h.kind==='photo'){ const p=S.photos.find(x=>x.id===h.id); drag={kind:'photo',p,id:p.id,x0:p.x,y0:p.y,w0:w}; }
     else if(h.kind==='item'){ const it=S.items.find(x=>x.id===h.id); drag={kind:'item',it,x0:it.x,y0:it.y,w0:w}; }
     else if(h.kind==='vertex'){ const q=S.pts[h.i]; drag={kind:'vertex',i:h.i,x0:q.x,y0:q.y,w0:w}; }
     else if(h.kind==='opening'){ drag={kind:'opening',o:S.openings.find(x=>x.id===h.id)}; }
@@ -787,6 +824,7 @@ cv.addEventListener('pointermove', e=>{
   }
   if(!gestureMoved) return;
   if(drag.kind==='item'){ drag.it.x=snap(drag.x0+w.x-drag.w0.x); drag.it.y=snap(drag.y0+w.y-drag.w0.y); }
+  else if(drag.kind==='photo'){ drag.p.x=snap(drag.x0+w.x-drag.w0.x); drag.p.y=snap(drag.y0+w.y-drag.w0.y); if(walk.photo===drag.p.id){ walk.x=drag.p.x; walk.z=drag.p.y; } }
   else if(drag.kind==='vertex'){
     const n=S.pts.length, q=S.pts[drag.i];
     let x=snap(drag.x0+w.x-drag.w0.x), y=snap(drag.y0+w.y-drag.w0.y);
@@ -807,7 +845,8 @@ function endPointer(e){
   if(mode==='draw' && !gestureMoved && !hadPinch){ addDraft(drawPoint(e.offsetX,e.offsetY)); }
   const d=drag; drag=null;
   if(d && d.kind!=='pan' && gestureMoved) commit();
-  if(walk.on && mode==='select' && d && d.kind==='pan' && !gestureMoved && !hadPinch){
+  if(walk.on && d && d.kind==='photo' && !gestureMoved){ openPhoto(d.id); }
+  if(walk.on && !walk.photo && mode==='select' && d && d.kind==='pan' && !gestureMoved && !hadPinch){
     const p=S2W(e.offsetX,e.offsetY);
     if(inPoly(p.x,p.y)){ const s=findStandNear(p.x,p.y); walk.target={x:s.x,z:s.z}; walk.tour=null; drawPlan(); }
   }
@@ -937,6 +976,22 @@ function renderInspector(){
     r2.append(numField('insp-ot','離牆角',opRange(t,w)[0],v=>t.t=v+t.w/2));
     const btns=document.createElement('div'); btns.className='btnrow'; btns.append(del);
     body.append(r1,r2,btns);
+  } else if(sel.kind==='photo'){
+    title.textContent='📷 實景相';
+    const nm=document.createElement('label'); nm.className='fld'; nm.innerHTML='<span>名稱</span>';
+    const ni=document.createElement('input'); ni.id='insp-pname'; ni.value=t.name||''; ni.style.fontFamily='var(--font-body)';
+    ni.addEventListener('change',()=>{ t.name=ni.value; commit(); }); nm.append(ni);
+    const r1=document.createElement('div'); r1.className='row2';
+    r1.append(numField('insp-phd','方向',t.heading,v=>t.heading=((Math.round(v)%360)+360)%360,{len:false,unit:'°'}));
+    if(t.fov<360) r1.append(numField('insp-pfov','水平角',t.fov,v=>t.fov=clamp(Math.round(v),30,360),{len:false,unit:'°'}));
+    const btns=document.createElement('div'); btns.className='btnrow';
+    const view=document.createElement('button'); view.className='btn primary'; view.textContent='睇實景'; view.onclick=()=>openPhoto(t.id);
+    const l=document.createElement('button'); l.className='btn'; l.textContent='◀ 5°'; l.onclick=()=>{ t.heading=(t.heading+355)%360; commit(); };
+    const r=document.createElement('button'); r.className='btn'; r.textContent='5° ▶'; r.onclick=()=>{ t.heading=(t.heading+5)%360; commit(); };
+    btns.append(view,l,r,del);
+    const tip=document.createElement('p'); tip.className='note'; tip.style.margin='0';
+    tip.textContent='喺平面圖拖個相機點去實際影相位置。睇實景時開「牆線對位」，用 ◀ ▶ 轉到黃色牆線貼住相入面嘅牆。';
+    body.append(nm,r1,btns,tip);
   } else if(sel.kind==='vertex'){
     title.textContent=`牆角 ${letter(sel.i)}`;
     const r1=document.createElement('div'); r1.className='row2';
@@ -983,19 +1038,34 @@ function rotateSel(deg){
 }
 function renderSelBar(){
   const bar=$('#selBar'), t=selTarget();
-  const show=!!t && (sel.kind==='item'||sel.kind==='opening') && mode==='select';
+  const show=!!t && (sel.kind==='item'||sel.kind==='opening'||sel.kind==='photo') && mode==='select';
   bar.hidden=!show; $('#scaleNote').hidden=show;
   if(!show) return;
   const isItem=sel.kind==='item';
   ['#sbRotL','#sbRotR','#sbRot15','#sbDup'].forEach(s=>$(s).hidden=!isItem);
-  $('#sbName').textContent=isItem?`${t.label||CATALOG[t.type].name} · ${t.rot}°`:OPENINGS[t.type].name;
+  $('#sbView').hidden=sel.kind!=='photo';
+  $('#sbName').textContent=isItem?`${t.label||CATALOG[t.type].name} · ${t.rot}°`:sel.kind==='photo'?t.name:OPENINGS[t.type].name;
+}
+$('#sbView').onclick=()=>{ if(sel&&sel.kind==='photo') openPhoto(sel.id); };
+function renderPhotoList(){
+  const ul=$('#photoList'); ul.innerHTML='';
+  S.photos.forEach(p=>{
+    const li=document.createElement('li'); if(walk.photo===p.id||(sel&&sel.id===p.id)) li.className='on';
+    li.innerHTML=`<img alt="" src="${p.thumb||''}"><div style="min-width:0"><b></b><small>${p.fov>=360?'360° 全景':p.fov+'° 全景'}</small></div>`;
+    li.querySelector('b').textContent=p.name;
+    const b=document.createElement('button'); b.className='btn'; b.textContent='睇';
+    b.onclick=ev=>{ ev.stopPropagation(); openPhoto(p.id); };
+    li.append(b);
+    li.onclick=()=>{ sel={kind:'photo',id:p.id}; renderPanel(); drawPlan(); };
+    ul.append(li);
+  });
 }
 $('#sbRotL').onclick=()=>rotateSel(-90);
 $('#sbRotR').onclick=()=>rotateSel(90);
 $('#sbRot15').onclick=()=>rotateSel(15);
 $('#sbDup').onclick=()=>{ const t=selTarget(); if(t&&sel.kind==='item') dupItem(t); };
 $('#sbDel').onclick=deleteSel;
-function renderPanel(){ renderStats(); renderInspector(); renderWalls(); renderRoom(); renderSelBar();
+function renderPanel(){ renderStats(); renderInspector(); renderWalls(); renderRoom(); renderSelBar(); renderPhotoList();
   $('#projName').value=S.name||'';
   $$('#unitSeg button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.u===S.unit));
   $('#segUnit').textContent=uLabel();
@@ -1049,15 +1119,19 @@ $('#sampleBtn').onclick=()=>{ S=sample(); sel=null; commit(); fit(); };
 $('#copyBtn').onclick=()=>{
   const txt=JSON.stringify(S,null,1);
   const fallback=()=>{ $('#importBox').hidden=false; $('#io').value=txt; $('#io').select(); toast('已選取資料，請按 Ctrl+C 複製'); };
-  try{ navigator.clipboard.writeText(txt).then(()=>toast('已複製專案資料'),fallback); }catch(e){ fallback(); }
+  const note=S.photos.length?'（唔包實景相，要連相請用「傳送／儲存專案檔」）':'';
+  try{ navigator.clipboard.writeText(txt).then(()=>toast('已複製專案資料'+note),fallback); }catch(e){ fallback(); }
 };
 $('#importToggle').onclick=()=>{ $('#importBox').hidden=!$('#importBox').hidden; };
 $('#importBtn').onclick=()=>{
   try{
     const d=JSON.parse($('#io').value);
     if(!Array.isArray(d.pts)||d.pts.length<3) throw 0;
-    S={name:d.name||'匯入專案',unit:d.unit==='ft'?'ft':'m',height:+d.height||3,wallT:+d.wallT||0.15,pts:d.pts,openings:d.openings||[],items:d.items||[]};
-    sel=null; commit(); fit(); toast('已匯入'); $('#importBox').hidden=true;
+    if(walk.on) exitWalk();
+    const pd=d.photoData||{};
+    Object.entries(pd).forEach(([id,u])=>{ try{ texCache.delete(id); photoPut(id,dataURLToBlob(u)); }catch(e){} });
+    S={name:d.name||'匯入專案',unit:d.unit==='ft'?'ft':'m',height:+d.height||3,wallT:+d.wallT||0.15,pts:d.pts,openings:d.openings||[],items:d.items||[],photos:d.photos||[]};
+    sel=null; commit(); fit(); toast('已匯入'+(S.photos.length?`，連 ${Object.keys(pd).length} 張實景相`:'')); $('#importBox').hidden=true;
   }catch(e){ toast('資料格式唔啱，請貼上由「複製資料」得到嘅內容'); }
 };
 
@@ -1143,7 +1217,7 @@ function build3D(){
   if(!R3) return;
   const {scene,group}=R3; disposeGroup(group);
   const dark=getComputedStyle(document.documentElement).colorScheme==='dark' || cssv('--bg').toLowerCase()==='#111513';
-  scene.background=new THREE.Color(cssv('--soft')||'#dfe4dd');
+  scene.background=new THREE.Color(walk.photo?'#0e1110':(cssv('--soft')||'#dfe4dd'));
   const H=S.height, T=S.wallT, Hc=(cut&&!walk.on)?Math.min(1.2,H):H, ws=walls();
   if(S.pts.length<3) return;
 
@@ -1177,7 +1251,8 @@ function build3D(){
 
   const wallMat=new THREE.MeshStandardMaterial({color:walk.on?0xd9d5cc:0xefece5,roughness:0.92});
   R3.scene.children.forEach(o=>{ if(o.isHemisphereLight) o.intensity=walk.on?0.55:0.75; if(o.isDirectionalLight) o.intensity=walk.on?0.45:0.75; });
-  const edgeMat=new THREE.LineBasicMaterial({color:0x3a423d,transparent:true,opacity:0.35});
+  const ovl=!!(walk.photo&&walk.overlay);
+  const edgeMat=new THREE.LineBasicMaterial({color:ovl?0xf5c22e:0x3a423d,transparent:true,opacity:ovl?0.95:0.35,depthTest:!ovl});
   const addSeg=(w,s0,s1,y0,y1)=>{
     y1=Math.min(y1,Hc); if(s1-s0<0.005||y1-y0<0.005) return;
     const mx=w.a.x+w.ux*(s0+s1)/2+w.nx*T/2, mz=w.a.y+w.uy*(s0+s1)/2+w.ny*T/2;
@@ -1270,6 +1345,22 @@ function build3D(){
     group.add(g);
   });
 
+  // photo-spot hotspots (walk mode)
+  if(walk.on){
+    S.photos.forEach(p=>{
+      if(p.id===walk.photo) return;
+      const ring=new THREE.Mesh(new THREE.RingGeometry(0.2,0.32,40).rotateX(-Math.PI/2),
+        new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:0.9,depthTest:false}));
+      ring.position.set(p.x,0.03,p.y); ring.renderOrder=20; ring.userData={hot:true,spot:p.id};
+      const disc=new THREE.Mesh(new THREE.CircleGeometry(0.2,32).rotateX(-Math.PI/2),
+        new THREE.MeshBasicMaterial({color:0x7a3fd1,transparent:true,opacity:0.75,depthTest:false}));
+      disc.position.set(p.x,0.031,p.y); disc.renderOrder=21; disc.userData={hot:true,spot:p.id};
+      const lb=textSprite('📷 '+p.name,'#7a3fd1','#ffffff'); lb.position.set(p.x,0.55,p.y); lb.scale.multiplyScalar(0.8); lb.userData={hot:true,spot:p.id};
+      group.add(ring,disc,lb);
+    });
+  }
+  applyPhotoVis(); refreshPhoto();
+
   R3.sun.position.set(cx+span*0.6,span*1.6+6,cz+span*0.4); R3.sun.target.position.set(cx,0,cz);
   if(!built){ built=true; camPreset('iso'); }
 }
@@ -1297,7 +1388,7 @@ $('#cutBtn').onclick=e=>{ cut=!cut; e.currentTarget.setAttribute('aria-pressed',
 $('#dimBtn').onclick=e=>{ showDims=!showDims; e.currentTarget.setAttribute('aria-pressed',showDims); build3DNow(); };
 
 /* ======================= WALK-THROUGH TOUR ======================= */
-const walk={on:false,yaw:0,pitch:-0.05,x:0,z:0,target:null,keys:{},joy:{x:0,y:0},gyro:false,ori:null,gyroOff:null,tour:null,saved:null,lastPlan:0};
+const walk={on:false,photo:null,overlay:false,lookMoved:false,yaw:0,pitch:-0.05,x:0,z:0,target:null,keys:{},joy:{x:0,y:0},gyro:false,ori:null,gyroOff:null,tour:null,saved:null,lastPlan:0};
 function inPoly(x,y){
   const p=S.pts; let inside=false;
   for(let i=0,j=p.length-1;i<p.length;j=i++){
@@ -1330,9 +1421,15 @@ function findStandNear(x,z){
 const eyeH=()=>Math.min(1.6,S.height-0.25);
 function camHeading(){ const d=new THREE.Vector3(); R3.camera.getWorldDirection(d); return Math.atan2(-d.x,-d.z); }
 function setWalkUI(on){
+  const ph=on&&!!walk.photo;
   $$('[data-orbit]').forEach(e=>e.hidden=on);
   $$('[data-walk]').forEach(e=>e.hidden=!on);
+  $$('[data-wphoto]').forEach(e=>e.hidden=!ph);
+  $('#photoBtn').hidden=!on||ph||!S.photos.length;
+  $('#alignBtn').setAttribute('aria-pressed',!!walk.overlay);
   $('#walkUI').hidden=!on;
+  $('#joy').hidden=ph;
+  $('#walkHint').textContent=ph?'拖動畫面望四周 · 撳地上紫色點跳去下一個實景位':'拖動畫面望四周 · 點地面行過去 · 用搖桿或 WASD 行走';
   $('#fsBtn').hidden=!on || !(R3&&(R3.host.parentElement.requestFullscreen||R3.host.parentElement.webkitRequestFullscreen));
   $('#gyroBtn').hidden=!on || typeof DeviceOrientationEvent==='undefined' || !('ontouchstart' in window);
 }
@@ -1355,6 +1452,7 @@ function enterWalk(){
 }
 function exitWalk(){
   if(!walk.on) return;
+  closePhoto(true);
   walk.on=false; setGyro(false);
   R3.camera.fov=45; R3.camera.updateProjectionMatrix();
   R3.camera.position.copy(walk.saved.p); R3.controls.target.copy(walk.saved.t); R3.controls.enabled=true; R3.controls.update();
@@ -1374,6 +1472,7 @@ function walkStep(dt){
   let s=(k.d||k.arrowright?1:0)-(k.a||k.arrowleft?1:0)+walk.joy.x;
   const hd=walk.gyro?camHeading():walk.yaw;
   let moved=false;
+  if(walk.photo){ f=0; s=0; walk.target=null; if(R3.pmesh) R3.pmesh.position.set(walk.x,eyeH(),walk.z); }
   if(Math.abs(f)>0.05||Math.abs(s)>0.05){
     walk.target=null; walk.tour=null;
     const sp=1.5*dt, fx=-Math.sin(hd), fz=-Math.cos(hd), rx=Math.cos(hd), rz=-Math.sin(hd);
@@ -1407,6 +1506,7 @@ function walkStep(dt){
   if((moved||walk.lookMoved)&&stage.dataset.view==='split'&&now-walk.lastPlan>90){ walk.lastPlan=now; walk.lookMoved=false; drawPlan(); }
 }
 function startTour(){
+  if(walk.photo){ walk.tour={t:0,dur:24,y0:walk.yaw}; return; }
   const c=centroid(), s=findStandNear(c.x,c.y);
   walk.target={x:s.x,z:s.z};
   const t0=performance.now();
@@ -1441,6 +1541,129 @@ $('#fsBtn').onclick=()=>{
   if(f) Promise.resolve(f.call(el)).catch(()=>toast('呢個瀏覽器唔支援全螢幕'));
 };
 
+/* ======================= 360 PHOTO SPOTS ======================= */
+const memPhotos=new Map();      // fallback when IndexedDB is unavailable
+const texCache=new Map();
+let dbp=null;
+function db(){
+  if(dbp) return dbp;
+  dbp=new Promise((res,rej)=>{
+    try{
+      const r=indexedDB.open('liangpou3d',1);
+      r.onupgradeneeded=()=>r.result.createObjectStore('photos');
+      r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error);
+    }catch(e){ rej(e); }
+  });
+  return dbp;
+}
+async function photoPut(id,blob){
+  memPhotos.set(id,blob);
+  try{ const d=await db(); await new Promise((res,rej)=>{ const tx=d.transaction('photos','readwrite'); tx.objectStore('photos').put(blob,id); tx.oncomplete=res; tx.onerror=()=>rej(tx.error); }); }catch(e){}
+}
+async function photoGet(id){
+  if(memPhotos.has(id)) return memPhotos.get(id);
+  try{ const d=await db(); const b=await new Promise((res,rej)=>{ const q=d.transaction('photos').objectStore('photos').get(id); q.onsuccess=()=>res(q.result); q.onerror=()=>rej(q.error); }); if(b) memPhotos.set(id,b); return b||null; }catch(e){ return null; }
+}
+function loadImg(blob){
+  return new Promise((res,rej)=>{ const u=URL.createObjectURL(blob), im=new Image();
+    im.onload=()=>res(im); im.onerror=()=>{ URL.revokeObjectURL(u); rej(new Error('相片格式唔支援')); }; im.src=u; });
+}
+async function prepPhoto(file){
+  const im=await loadImg(file);
+  const w0=im.naturalWidth, h0=im.naturalHeight, s=Math.min(1,4096/w0,4096/h0);
+  const w=Math.round(w0*s), h=Math.round(h0*s);
+  const c=document.createElement('canvas'); c.width=w; c.height=h; c.getContext('2d').drawImage(im,0,0,w,h);
+  URL.revokeObjectURL(im.src);
+  const blob=await new Promise(r=>c.toBlob(r,'image/jpeg',0.86));
+  const t=document.createElement('canvas'); t.width=192; t.height=96;
+  const tg=t.getContext('2d'), sw=Math.min(w,h*2), sx=(w-sw)/2;
+  tg.drawImage(c,sx,0,sw,h,0,0,192,96);
+  return {blob,w,h,thumb:t.toDataURL('image/jpeg',0.7)};
+}
+async function getTex(id){
+  if(texCache.has(id)) return texCache.get(id);
+  const b=await photoGet(id); if(!b) return null;
+  const im=await loadImg(b);
+  const tex=new THREE.Texture(im); tex.encoding=THREE.sRGBEncoding; tex.generateMipmaps=false; tex.minFilter=THREE.LinearFilter; tex.needsUpdate=true;
+  texCache.set(id,tex); return tex;
+}
+function photoGeo(p){
+  const R=30;
+  if(p.fov>=360&&p.aspect>1.85&&p.aspect<2.15){ const g=new THREE.SphereGeometry(R,64,40); g.scale(-1,1,1); g.userData={sphere:true}; return g; }
+  const L=p.fov*Math.PI/180, H=R*L/p.aspect;
+  const g=new THREE.CylinderGeometry(R,R,H,96,1,true,Math.PI-L/2,L); g.scale(-1,1,1); return g;
+}
+function refreshPhoto(){
+  if(!R3||!R3.pmesh) return;
+  const p=S.photos.find(x=>x.id===walk.photo); if(!p) return;
+  const key=p.fov+'|'+p.aspect;
+  if(R3.pmesh.userData.key!==key){ R3.pmesh.geometry.dispose(); R3.pmesh.geometry=photoGeo(p); R3.pmesh.userData.key=key; }
+  const hr=p.heading*Math.PI/180;
+  R3.pmesh.rotation.y = R3.pmesh.geometry.userData.sphere ? hr-Math.PI/2 : hr;
+  R3.pmesh.position.set(walk.x,eyeH(),walk.z);
+}
+function applyPhotoVis(){
+  if(!R3) return;
+  const ph=!!walk.photo;
+  R3.group.children.forEach(o=>{
+    if(o.userData&&o.userData.hot){ o.visible=walk.on; return; }
+    o.visible = !ph || !!(walk.overlay && o.isLineSegments);
+  });
+  if(R3.pmesh) R3.pmesh.visible=ph;
+}
+async function openPhoto(id){
+  const p=S.photos.find(x=>x.id===id); if(!p||!has3) return;
+  if(!walk.on) enterWalk();
+  const yaw=walk.yaw;
+  walk.photo=id; walk.x=p.x; walk.z=p.y; walk.target=null; walk.tour=null; walk.yaw=yaw;
+  setWalkUI(true); build3DNow(); renderPanel(); drawPlan();
+  const tex=await getTex(id);
+  if(walk.photo!==id) return;
+  if(!tex){ toast('呢部機搵唔到呢張相嘅檔案，請用「開啟專案檔」載入連相嘅專案'); return; }
+  if(!R3.pmesh){
+    R3.pmesh=new THREE.Mesh(photoGeo(p),new THREE.MeshBasicMaterial({map:tex,depthTest:false,depthWrite:false}));
+    R3.pmesh.renderOrder=-1; R3.pmesh.userData.key=p.fov+'|'+p.aspect; R3.scene.add(R3.pmesh);
+  } else {
+    R3.pmesh.material.map=tex; R3.pmesh.material.needsUpdate=true;
+    R3.pmesh.geometry.dispose(); R3.pmesh.geometry=photoGeo(p); R3.pmesh.userData.key=p.fov+'|'+p.aspect;
+  }
+  refreshPhoto(); applyPhotoVis();
+}
+function closePhoto(silent){
+  if(!walk.photo) return;
+  walk.photo=null; walk.overlay=false;
+  if(R3&&R3.pmesh){ R3.scene.remove(R3.pmesh); R3.pmesh.geometry.dispose(); R3.pmesh.material.dispose(); R3.pmesh=null; }
+  if(!silent){ const s=findStandNear(walk.x,walk.z); walk.x=s.x; walk.z=s.z; setWalkUI(true); build3DNow(); renderPanel(); drawPlan(); }
+}
+$('#photoBtn').onclick=()=>{
+  let best=null, bd=1e9; S.photos.forEach(p=>{ const d=Math.hypot(p.x-walk.x,p.y-walk.z); if(d<bd){ bd=d; best=p; } });
+  if(best) openPhoto(best.id);
+};
+$('#modelBtn').onclick=()=>closePhoto(false);
+$('#alignBtn').onclick=()=>{ walk.overlay=!walk.overlay; setWalkUI(true); build3DNow(); };
+const nudge=d=>{ const p=S.photos.find(x=>x.id===walk.photo); if(!p) return; p.heading=((p.heading+d)%360+360)%360; commit(); };
+$('#hdL').onclick=()=>nudge(-3);
+$('#hdR').onclick=()=>nudge(3);
+$('#photoFile').addEventListener('change',async e=>{
+  const f=e.target.files[0]; e.target.value=''; if(!f) return;
+  if(!has3){ toast('3D 模組未載入，未能加入實景相'); return; }
+  toast('處理相片中…');
+  try{
+    const {blob,w,h,thumb}=await prepPhoto(f), id=uid(), aspect=w/h;
+    await photoPut(id,blob);
+    let pos, heading=0;
+    if(walk.on&&!walk.photo){ pos={x:walk.x,y:walk.z}; heading=Math.round(((walk.yaw*180/Math.PI)%360+360)%360); }
+    else { const c=centroid(), s=findStandNear(c.x,c.y); pos={x:s.x,y:s.z}; }
+    const full=aspect>1.85&&aspect<2.15;
+    const sp={id,name:'實景 '+(S.photos.length+1),x:+pos.x.toFixed(2),y:+pos.y.toFixed(2),heading,aspect:+aspect.toFixed(3),fov:full?360:Math.min(360,Math.max(40,Math.round(aspect*55))),thumb};
+    S.photos.push(sp); sel={kind:'photo',id}; commit();
+    if(stage.dataset.view==='plan') setView(window.innerWidth<900?'3d':'split');
+    await openPhoto(id);
+    walk.yaw=heading*Math.PI/180; walk.pitch=0;
+    toast('已加入。喺平面圖拖相機點去影相位置，再用「牆線對位」◀ ▶ 對正方向');
+  }catch(err){ toast('相片讀取失敗：'+(err.message||err)); }
+});
+
 /* look-around + tap-to-walk on the 3D canvas */
 (function bindWalkPointer(){
   const host=$('#three'); let down=null;
@@ -1463,6 +1686,10 @@ $('#fsBtn').onclick=()=>{
     const r=R3.renderer.domElement.getBoundingClientRect();
     const v=new THREE.Vector2(((e.clientX-r.left)/r.width)*2-1,-((e.clientY-r.top)/r.height)*2+1);
     const rc=new THREE.Raycaster(); rc.setFromCamera(v,R3.camera);
+    const hot=R3.group.children.filter(o=>o.userData&&o.userData.hot);
+    const hh=rc.intersectObjects(hot)[0];
+    if(hh){ openPhoto(hh.object.userData.spot); return; }
+    if(walk.photo) return;
     const hit=rc.intersectObject(R3.floor)[0];
     if(hit){ const s=findStandNear(hit.point.x,hit.point.z); walk.target={x:s.x,z:s.z}; walk.tour=null; }
   });
@@ -1499,18 +1726,34 @@ let topLevel=false; try{ topLevel=window.top===window.self; }catch(e){ topLevel=
 $('#dlRow').hidden=!topLevel; $('#dlNote').hidden=topLevel;
 function saveBlob(blob,name){ const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; document.body.append(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); },1000); }
 /* project file: share (phone) / save / open */
-const projFile=()=>{
+const blobToDataURL=b=>new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=()=>rej(r.error); r.readAsDataURL(b); });
+function dataURLToBlob(u){
+  const [h,d]=u.split(','), mime=(h.match(/data:([^;]+)/)||[])[1]||'image/jpeg', bin=atob(d), arr=new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) arr[i]=bin.charCodeAt(i);
+  return new Blob([arr],{type:mime});
+}
+async function projFile(){
   const name=((S.name||'shop').replace(/[\\/:*?"<>|]/g,'_'))+'.json';
-  return new File([JSON.stringify(S,null,1)],name,{type:'application/json'});
-};
+  const d=JSON.parse(JSON.stringify(S));
+  if(S.photos.length){
+    d.photoData={};
+    for(const p of S.photos){ const b=await photoGet(p.id); if(b) d.photoData[p.id]=await blobToDataURL(b); }
+  }
+  return new File([JSON.stringify(d)],name,{type:'application/json'});
+}
+let shareCache=null;   // {snap,file} — lets a second tap share instantly if the first lost the tap permission
 $('#saveJsonBtn').hidden=!topLevel;
-$('#saveJsonBtn').onclick=()=>{ const f=projFile(); saveBlob(f,f.name); toast('已儲存 '+f.name); };
-const canShareFile=()=>{ try{ return topLevel && navigator.canShare && navigator.canShare({files:[projFile()]}); }catch(e){ return false; } };
+$('#saveJsonBtn').onclick=async()=>{ const f=await projFile(); saveBlob(f,f.name); toast('已儲存 '+f.name+(S.photos.length?`（連 ${S.photos.length} 張實景相）`:'')); };
+const canShareFile=()=>{ try{ return topLevel && navigator.canShare && navigator.canShare({files:[new File(['{}'],'a.json',{type:'application/json'})]}); }catch(e){ return false; } };
 $('#shareBtn').hidden=!canShareFile();
 $('#shareBtn').onclick=async()=>{
-  const f=projFile();
+  let f = shareCache&&shareCache.snap===lastSnap ? shareCache.file : null;
+  if(!f){ f=await projFile(); shareCache={snap:lastSnap,file:f}; }
   try{ await navigator.share({files:[f],title:S.name||'量舖 3D 專案'}); }
-  catch(e){ if(e.name!=='AbortError'){ saveBlob(f,f.name); toast('未能分享，已改為儲存檔案'); } }
+  catch(e){
+    if(e.name==='NotAllowedError') toast('檔案準備好，請再撳一次「傳送專案檔」');
+    else if(e.name!=='AbortError'){ saveBlob(f,f.name); toast('未能分享，已改為儲存檔案'); }
+  }
 };
 $('#openFile').addEventListener('change',e=>{
   const f=e.target.files[0]; if(!f) return;
@@ -1611,8 +1854,7 @@ async function startAR(){
   });
 }
 
-/* ======================= boot ======================= */
-/* phone: the plan/3D canvases capture touch, so offer a button to move between drawing and the panel */
+/* ======================= boot ======================= *//* phone: the plan/3D canvases capture touch, so offer a button to move between drawing and the panel */
 const jumpBtn=$('#jumpBtn');
 let atPanel=false;
 const updJump=()=>{
