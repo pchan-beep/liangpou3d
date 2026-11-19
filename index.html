@@ -69,6 +69,10 @@ button{cursor:pointer}
 .drawbar .arrows{display:inline-flex;gap:4px}
 .drawbar .arrows button{width:34px;height:32px;border:1px solid var(--line);border-radius:7px;background:var(--bg);font-size:15px}
 .drawbar p{margin:0;font-size:12px;color:var(--muted);flex-basis:100%}
+.jump{display:none;position:fixed;z-index:20;right:max(14px,env(safe-area-inset-right,0px));bottom:calc(14px + env(safe-area-inset-bottom,0px));
+  border:0;border-radius:999px;padding:11px 16px;font-size:14px;font-weight:500;background:var(--ink);color:var(--panel);box-shadow:0 6px 18px rgba(0,0,0,.25)}
+.panel-grip{display:none}
+@media (max-width:900px){ .panel-grip{display:block;width:44px;height:5px;border-radius:3px;background:var(--line);margin:-6px auto 0} }
 .scale-note{position:absolute;left:10px;bottom:10px;font-size:11px;color:var(--muted);font-family:var(--font-mono);z-index:1}
 
 .panel{overflow:auto;border-left:1px solid var(--line);background:var(--panel);display:flex;flex-direction:column;gap:18px;
@@ -129,7 +133,8 @@ textarea#io{width:100%;min-height:110px;border:1px solid var(--line);border-radi
   .btn{padding:9px 13px;font-size:14px}
   #undoBtn{position:absolute;top:calc(10px + env(safe-area-inset-top,0px));right:max(16px,env(safe-area-inset-right,0px))}
   .top{position:relative}
-  .stage{height:calc(100svh - var(--toph,110px));min-height:420px;grid-template-columns:1fr}
+  .stage{height:calc(100svh - var(--toph,110px) - 96px);min-height:380px;grid-template-columns:1fr}
+  .jump{display:block}
   .stage[data-view="split"]{grid-template-rows:1fr 1fr}
   .chip{padding:8px 12px;font-size:14px;border-radius:9px}
   .tag{display:none}
@@ -203,7 +208,8 @@ textarea#io{width:100%;min-height:110px;border:1px solid var(--line);border-radi
     </section>
   </main>
 
-  <aside class="panel">
+  <aside class="panel" id="panel">
+    <div class="panel-grip" aria-hidden="true"></div>
     <section class="stats" id="stats" aria-live="polite"></section>
     <section id="inspector" hidden></section>
     <section>
@@ -259,6 +265,8 @@ textarea#io{width:100%;min-height:110px;border:1px solid var(--line);border-radi
     </section>
   </aside>
 </div>
+
+<button class="jump" id="jumpBtn" type="button">↓ 尺寸／設定</button>
 
 <div id="arOverlay" hidden>
   <div class="bar topbar"><div><b id="arDist">—</b><div id="arMsg" style="font-size:13px">慢慢移動手機掃描地面，見到黃色圓圈後點擊畫面放置牆角。</div></div></div>
@@ -1299,6 +1307,21 @@ async function startAR(){
 }
 
 /* ======================= boot ======================= */
+/* phone: the plan/3D canvases capture touch, so offer a button to move between drawing and the panel */
+const jumpBtn=$('#jumpBtn');
+let atPanel=false;
+const updJump=()=>{
+  atPanel=$('#panel').getBoundingClientRect().top < window.innerHeight*0.45;
+  jumpBtn.textContent=atPanel?'↑ 返回平面圖':'↓ 尺寸／設定';
+  jumpBtn.hidden = mode==='draw' && !atPanel;
+};
+window.addEventListener('scroll',updJump,{passive:true});
+jumpBtn.onclick=()=>{
+  if(atPanel) window.scrollTo({top:0,behavior:'smooth'});
+  else $('#panel').scrollIntoView({behavior:'smooth',block:'start'});
+};
+const _setMode=setMode;
+setMode=m=>{ _setMode(m); updJump(); };
 const topEl=$('.top');
 new ResizeObserver(()=>document.documentElement.style.setProperty('--toph',topEl.offsetHeight+'px')).observe(topEl);
 const ro=new ResizeObserver(()=>{ const first=!cv.width; resizePlan(); if(first) fit(); });
