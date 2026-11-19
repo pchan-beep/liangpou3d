@@ -1,0 +1,1259 @@
+<title>量舖 3D</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+HK:wght@400;500;700&family=Space+Grotesk:wght@500;700&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+/* Layout: one-screen surveyor's workspace — plan + 3D stage on the left, measurement sheet on the right; stacks on phones */
+:root{
+  --bg:#e9ece7; --panel:#fbfbf8; --ink:#1a211d; --muted:#5d6a63; --line:#d2d8d1; --soft:#dfe4dd;
+  --accent:#f0b400; --accent-ink:#241a00; --wall:#27312c; --floor:#f6f2e6; --plan-bg:#eef1ec;
+  --grid:#dde2da; --grid-strong:#c7cec5; --dim:#b4460e; --sel:#0d6bcb; --danger:#b3261e;
+  --font-body:"Noto Sans HK","Microsoft JhengHei",system-ui,sans-serif;
+  --font-display:"Space Grotesk","Noto Sans HK",system-ui,sans-serif;
+  --font-mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#111513; --panel:#181d1a; --ink:#e5ebe6; --muted:#98a59e; --line:#2c3530; --soft:#202723;
+  --accent:#f5c22e; --accent-ink:#241a00; --wall:#cdd7d0; --floor:#1d2420; --plan-bg:#141916;
+  --grid:#1e2521; --grid-strong:#2a332e; --dim:#f08a4b; --sel:#5aa7ff; --danger:#ff8a80; color-scheme:dark } }
+:root[data-theme="dark"]{
+  --bg:#111513; --panel:#181d1a; --ink:#e5ebe6; --muted:#98a59e; --line:#2c3530; --soft:#202723;
+  --accent:#f5c22e; --accent-ink:#241a00; --wall:#cdd7d0; --floor:#1d2420; --plan-bg:#141916;
+  --grid:#1e2521; --grid-strong:#2a332e; --dim:#f08a4b; --sel:#5aa7ff; --danger:#ff8a80; color-scheme:dark }
+
+html,body{height:100%}
+[hidden]{display:none!important}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font-body);font-size:14px;line-height:1.5}
+button,input,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--sel);outline-offset:2px}
+
+.app{display:grid;grid-template-columns:minmax(0,1fr) 360px;grid-template-rows:auto minmax(0,1fr);height:100%}
+.top{grid-column:1/-1;display:flex;align-items:center;gap:10px 14px;flex-wrap:wrap;background:var(--panel);border-bottom:1px solid var(--line);
+  padding-block:10px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.brand{display:flex;align-items:center;gap:10px;margin-right:auto;min-width:0}
+.logo{width:34px;height:34px;border-radius:8px;background:var(--accent);display:grid;place-items:center;flex:none}
+.brand b{font-family:var(--font-display);font-size:17px;letter-spacing:.02em;display:block;line-height:1.1}
+.brand input{border:0;background:transparent;color:var(--muted);font-size:12px;padding:0;width:min(220px,46vw)}
+.brand input:hover,.brand input:focus{color:var(--ink)}
+
+.seg{display:inline-flex;background:var(--soft);border-radius:9px;padding:3px;gap:2px}
+.seg button{border:0;background:transparent;padding:5px 11px;border-radius:7px;font-size:13px;color:var(--muted)}
+.seg button[aria-pressed="true"]{background:var(--panel);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.12);font-weight:500}
+.btn{border:1px solid var(--line);background:var(--panel);border-radius:8px;padding:6px 11px;font-size:13px}
+.btn:hover{border-color:var(--muted)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:500}
+.btn.danger{color:var(--danger)}
+.btn:disabled{opacity:.45;cursor:default}
+
+.stage{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line);min-height:0;min-width:0}
+.stage[data-view="plan"],.stage[data-view="3d"]{grid-template-columns:1fr}
+.stage[data-view="plan"] .three-pane,.stage[data-view="3d"] .plan-pane{display:none}
+.pane{position:relative;min-width:0;min-height:0;background:var(--plan-bg)}
+.three-pane{background:var(--soft)}
+#plan{position:absolute;inset:0;width:100%;height:100%;touch-action:none;display:block}
+#three{position:absolute;inset:0}
+#three canvas{display:block;width:100%!important;height:100%!important;touch-action:none}
+.tools{position:absolute;top:10px;left:10px;right:10px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;pointer-events:none;z-index:2}
+.tools > *{pointer-events:auto}
+.tag{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:3px 7px;font-family:var(--font-display)}
+.tools .spacer{flex:1;pointer-events:none}
+.chip{border:1px solid var(--line);background:var(--panel);border-radius:7px;padding:4px 9px;font-size:12.5px}
+.chip[aria-pressed="true"]{background:var(--ink);color:var(--panel);border-color:var(--ink)}
+.drawbar{position:absolute;left:10px;right:10px;bottom:10px;z-index:2;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 10px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;box-shadow:0 6px 20px rgba(0,0,0,.12)}
+.drawbar input{width:84px;border:1px solid var(--line);border-radius:7px;padding:5px 7px;background:var(--bg);font-family:var(--font-mono)}
+.drawbar .arrows{display:inline-flex;gap:4px}
+.drawbar .arrows button{width:34px;height:32px;border:1px solid var(--line);border-radius:7px;background:var(--bg);font-size:15px}
+.drawbar p{margin:0;font-size:12px;color:var(--muted);flex-basis:100%}
+.scale-note{position:absolute;left:10px;bottom:10px;font-size:11px;color:var(--muted);font-family:var(--font-mono);z-index:1}
+
+.panel{overflow:auto;border-left:1px solid var(--line);background:var(--panel);display:flex;flex-direction:column;gap:18px;
+  padding-block:16px 28px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.panel h2{font-family:var(--font-display);font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:0 0 8px;font-weight:700}
+.panel h3{font-size:12.5px;margin:12px 0 6px;color:var(--muted);font-weight:500}
+.note{font-size:12px;color:var(--muted);margin:0 0 8px}
+
+.stats{background:var(--ink);color:var(--panel);border-radius:12px;padding:14px 16px;display:grid;gap:10px}
+.stats .big b{font-family:var(--font-display);font-size:34px;line-height:1;font-variant-numeric:tabular-nums}
+.stats .big small{font-size:15px;font-weight:500}
+.stats .big .k{display:block;font-size:11px;letter-spacing:.1em;opacity:.7}
+.stats .big .sub{display:block;color:var(--accent);font-family:var(--font-mono);font-size:13px;margin-top:4px}
+.stats dl{display:grid;grid-template-columns:1fr 1fr;gap:6px 14px;margin:0;border-top:1px solid color-mix(in srgb,var(--panel) 20%,transparent);padding-top:10px}
+.stats dt{font-size:11px;opacity:.65}
+.stats dd{margin:0;font-family:var(--font-mono);font-size:13px;font-variant-numeric:tabular-nums}
+
+.fld{display:flex;align-items:center;gap:6px;font-size:13px}
+.fld span{color:var(--muted);min-width:56px}
+.fld input,.fld select{width:100%;min-width:0;border:1px solid var(--line);border-radius:7px;padding:5px 7px;background:var(--bg);font-family:var(--font-mono);font-size:13px}
+.fld em{font-style:normal;font-size:12px;color:var(--muted);min-width:18px}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.walls{list-style:none;margin:0;padding:0;display:grid;gap:5px}
+.walls li{display:grid;grid-template-columns:62px minmax(0,1fr);align-items:center;gap:8px;padding:3px 6px;border-radius:8px}
+.walls li.on{background:color-mix(in srgb,var(--sel) 12%,transparent)}
+.walls li button{border:0;background:transparent;font-family:var(--font-mono);font-size:12.5px;text-align:left;padding:4px 0;color:var(--ink)}
+.walls .fld span{display:none}
+.addgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.addgrid button{border:1px solid var(--line);background:var(--bg);border-radius:9px;padding:8px 4px;font-size:12.5px;display:grid;justify-items:center;gap:4px}
+.addgrid button:hover{border-color:var(--muted)}
+.addgrid i{width:22px;height:14px;border-radius:3px;display:block}
+.insp{border:1px solid var(--sel);border-radius:12px;padding:12px;display:grid;gap:8px}
+.insp header{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.insp header b{font-size:14px}
+.btnrow{display:flex;flex-wrap:wrap;gap:6px}
+.ar{background:var(--soft);border-radius:12px;padding:12px;display:grid;gap:8px}
+.ar p{margin:0;font-size:12.5px;color:var(--muted)}
+textarea#io{width:100%;min-height:110px;border:1px solid var(--line);border-radius:8px;background:var(--bg);font-family:var(--font-mono);font-size:11.5px;padding:8px;box-sizing:border-box}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--panel);padding:8px 14px;border-radius:8px;font-size:13px;z-index:50}
+
+#arOverlay{position:fixed;inset:0;z-index:100;display:flex;flex-direction:column;justify-content:space-between;pointer-events:none;color:#fff;font-family:var(--font-body)}
+#arOverlay .bar{pointer-events:auto;background:rgba(10,14,12,.72);padding:14px max(16px,env(safe-area-inset-left,0px));display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+#arOverlay .bar.topbar{padding-top:calc(14px + env(safe-area-inset-top,0px))}
+#arOverlay .bar.bottombar{padding-bottom:calc(14px + env(safe-area-inset-bottom,0px))}
+#arOverlay b{font-family:var(--font-display);font-size:22px;color:#f5c22e}
+#arOverlay button{border:0;border-radius:9px;padding:10px 14px;font-size:14px;background:#fff;color:#111}
+#arOverlay button.go{background:#f5c22e}
+
+@media (max-width:900px){
+  .app{grid-template-columns:1fr;grid-template-rows:auto auto auto;height:auto}
+  .stage{height:min(70vh,640px);grid-template-columns:1fr}
+  .stage[data-view="split"]{grid-template-rows:1fr 1fr}
+  .panel{border-left:0;border-top:1px solid var(--line);overflow:visible}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="app">
+  <header class="top">
+    <div class="brand">
+      <div class="logo" aria-hidden="true">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#241a00" stroke-width="2"><rect x="2" y="7" width="20" height="10" rx="1.5"/><path d="M6 7v4M10 7v3M14 7v4M18 7v3"/></svg>
+      </div>
+      <div style="min-width:0"><b>量舖 3D</b><input id="projName" aria-label="專案名稱"></div>
+    </div>
+    <div class="seg" id="viewSeg" role="group" aria-label="檢視">
+      <button data-v="plan">平面</button><button data-v="split">雙視圖</button><button data-v="3d">3D</button>
+    </div>
+    <div class="seg" id="unitSeg" role="group" aria-label="單位">
+      <button data-u="m">米</button><button data-u="ft">呎</button>
+    </div>
+    <button class="btn" id="undoBtn" title="復原 (Ctrl+Z)">↶ 復原</button>
+  </header>
+
+  <main class="stage" id="stage" data-view="split">
+    <section class="pane plan-pane">
+      <div class="tools">
+        <span class="tag">平面圖</span>
+        <button class="chip" id="mSelect">選取／移動</button>
+        <button class="chip" id="mDraw">✎ 畫牆</button>
+        <span class="spacer"></span>
+        <button class="chip" id="fitBtn">置中</button>
+      </div>
+      <canvas id="plan"></canvas>
+      <div class="scale-note" id="scaleNote"></div>
+      <div class="drawbar" id="drawBar" hidden>
+        <label class="fld" style="gap:6px"><span style="min-width:auto">下一段</span><input id="segLen" type="number" inputmode="decimal" step="0.01" value="3"><em id="segUnit">m</em></label>
+        <div class="arrows" role="group" aria-label="方向">
+          <button data-d="L" title="向左">←</button><button data-d="U" title="向上">↑</button><button data-d="D" title="向下">↓</button><button data-d="R" title="向右">→</button>
+        </div>
+        <button class="btn primary" id="closeDraft">閉合</button>
+        <button class="btn" id="undoDraft">退一點</button>
+        <button class="btn" id="cancelDraft">取消</button>
+        <p id="drawHint">在圖上逐個點擊牆角，或輸入量到的長度再按方向鍵。點返第一點即閉合。</p>
+      </div>
+    </section>
+    <section class="pane three-pane">
+      <div class="tools">
+        <span class="tag">3D 空間圖</span>
+        <button class="chip" data-cam="iso">等角</button>
+        <button class="chip" data-cam="top">俯視</button>
+        <button class="chip" data-cam="front">入口</button>
+        <span class="spacer"></span>
+        <button class="chip" id="cutBtn" aria-pressed="false">半高牆</button>
+        <button class="chip" id="dimBtn" aria-pressed="true">尺寸</button>
+      </div>
+      <div id="three"></div>
+    </section>
+  </main>
+
+  <aside class="panel">
+    <section class="stats" id="stats" aria-live="polite"></section>
+    <section id="inspector" hidden></section>
+    <section>
+      <h2>空間設定</h2>
+      <div class="row2" id="roomFields"></div>
+      <h3>快速範本</h3>
+      <div class="row2" id="tplFields"></div>
+      <div class="btnrow" style="margin-top:8px">
+        <button class="btn" id="mkRect">生成長方形</button>
+        <button class="btn" id="mkL">生成 L 形</button>
+      </div>
+    </section>
+    <section>
+      <h2>牆身尺寸</h2>
+      <p class="note">輸入雷射尺／捲尺量到的長度。改一幅牆會推移下一幅，直角保持不變。</p>
+      <ol class="walls" id="walls"></ol>
+    </section>
+    <section>
+      <h2>加入物件</h2>
+      <div class="addgrid" id="addItems"></div>
+      <h3>門窗（加到已選牆，否則最長嗰幅）</h3>
+      <div class="addgrid" id="addOpen"></div>
+    </section>
+    <section>
+      <h2>實地量度 AR</h2>
+      <div class="ar" id="arBox"><p>檢查裝置支援中…</p></div>
+    </section>
+    <section>
+      <h2>專案資料</h2>
+      <div class="btnrow">
+        <button class="btn" id="copyBtn">複製資料</button>
+        <button class="btn" id="importToggle">貼上匯入</button>
+        <button class="btn" id="sampleBtn">載入範例</button>
+        <button class="btn danger" id="clearBtn">清空重畫</button>
+      </div>
+      <div id="importBox" hidden style="margin-top:8px;display:grid;gap:6px">
+        <textarea id="io" placeholder="貼上之前複製的 JSON 資料"></textarea>
+        <button class="btn primary" id="importBtn">匯入</button>
+      </div>
+      <div class="btnrow" id="dlRow" style="margin-top:8px" hidden>
+        <button class="btn" id="pngBtn">下載 3D 圖 PNG</button>
+        <button class="btn" id="glbBtn">下載 3D 模型 GLB</button>
+      </div>
+      <p class="note" id="dlNote" style="margin-top:8px" hidden>下載 PNG／GLB 模型：喺電腦直接開啟 index.html 檔案版本即可使用。</p>
+    </section>
+  </aside>
+</div>
+
+<div id="arOverlay" hidden>
+  <div class="bar topbar"><div><b id="arDist">—</b><div id="arMsg" style="font-size:13px">慢慢移動手機掃描地面，見到黃色圓圈後點擊畫面放置牆角。</div></div></div>
+  <div class="bar bottombar">
+    <button id="arUndo">退一點</button>
+    <button class="go" id="arDone">完成並建立平面</button>
+    <button id="arCancel">取消</button>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/exporters/GLTFExporter.js"></script>
+<script>
+(() => {
+'use strict';
+const $ = s => document.querySelector(s);
+const $$ = s => Array.from(document.querySelectorAll(s));
+const cssv = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const KEY = 'liangpou3d.v1';
+const store = {
+  get(){ try { return localStorage.getItem(KEY); } catch(e){ return null; } },
+  set(v){ try { localStorage.setItem(KEY, v); } catch(e){} }
+};
+const uid = () => 'x' + Math.random().toString(36).slice(2, 9);
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const snap = (v, s = 0.05) => Math.round(v / s) * s;
+const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+const letter = i => LETTERS[i % 26] + (i >= 26 ? Math.floor(i / 26) : '');
+
+const CATALOG = {
+  shelf:   { name:'靠牆貨架', w:1.2, d:0.45, h:1.8, color:'#c98b4a' },
+  gondola: { name:'中島貨架', w:1.8, d:0.9,  h:1.4, color:'#d6a160' },
+  counter: { name:'收銀台',   w:1.5, d:0.6,  h:1.0, color:'#3d6b8c' },
+  fridge:  { name:'雪櫃',     w:0.8, d:0.7,  h:2.0, color:'#8fb6c8' },
+  table:   { name:'展示枱',   w:1.2, d:0.8,  h:0.9, color:'#a39a7e' },
+  column:  { name:'柱',       w:0.5, d:0.5,  h:0,   color:'#9a9d96' }
+};
+const OPENINGS = {
+  shutter: { name:'舖面鐵閘', w:3.0, h:2.8, sill:0 },
+  door:    { name:'門',       w:0.9, h:2.1, sill:0 },
+  window:  { name:'窗',       w:1.2, h:1.2, sill:0.9 }
+};
+
+function sample(){
+  return {
+    name:'範例：L 形地舖', unit:'m', height:3.2, wallT:0.15,
+    pts:[{x:0,y:0},{x:8,y:0},{x:8,y:4.5},{x:5,y:4.5},{x:5,y:7},{x:0,y:7}],
+    openings:[
+      {id:uid(),type:'shutter',wall:0,t:4,w:3.2,h:2.8,sill:0},
+      {id:uid(),type:'window',wall:1,t:1.6,w:1.5,h:1.2,sill:1.1},
+      {id:uid(),type:'door',wall:3,t:1.3,w:0.9,h:2.1,sill:0}
+    ],
+    items:[
+      {id:uid(),type:'counter',x:7.2,y:1.5,w:1.5,d:0.6,h:1.0,rot:90,label:'收銀台'},
+      {id:uid(),type:'fridge',x:7.65,y:3.0,w:0.8,d:0.7,h:2.0,rot:270,label:'雪櫃'},
+      {id:uid(),type:'fridge',x:7.65,y:3.85,w:0.8,d:0.7,h:2.0,rot:270,label:'雪櫃'},
+      {id:uid(),type:'shelf',x:0.225,y:2.2,w:1.2,d:0.45,h:1.8,rot:90,label:'貨架'},
+      {id:uid(),type:'shelf',x:0.225,y:3.45,w:1.2,d:0.45,h:1.8,rot:90,label:'貨架'},
+      {id:uid(),type:'shelf',x:0.225,y:4.7,w:1.2,d:0.45,h:1.8,rot:90,label:'貨架'},
+      {id:uid(),type:'shelf',x:0.225,y:5.95,w:1.2,d:0.45,h:1.8,rot:90,label:'貨架'},
+      {id:uid(),type:'shelf',x:1.85,y:6.775,w:1.2,d:0.45,h:1.8,rot:0,label:'貨架'},
+      {id:uid(),type:'shelf',x:3.1,y:6.775,w:1.2,d:0.45,h:1.8,rot:0,label:'貨架'},
+      {id:uid(),type:'gondola',x:2.6,y:2.9,w:1.8,d:0.9,h:1.4,rot:90,label:'中島'},
+      {id:uid(),type:'gondola',x:4.3,y:2.9,w:1.8,d:0.9,h:1.4,rot:90,label:'中島'},
+      {id:uid(),type:'column',x:5.6,y:1.4,w:0.5,d:0.5,h:0,rot:0,label:'柱'}
+    ]
+  };
+}
+
+let S;
+try { S = JSON.parse(store.get()); } catch(e){ S = null; }
+if (!S || !Array.isArray(S.pts) || S.pts.length < 3) S = sample();
+let lastSnap = JSON.stringify(S);
+const hist = [];
+let sel = null;           // {kind:'item'|'opening'|'vertex'|'wall', id|i}
+let mode = 'select';
+let draft = [];
+let hover = null;
+const view = { scale:50, ox:40, oy:40 };
+let cut = false, showDims = true;
+
+/* ---------- geometry ---------- */
+function polyArea(p){ let s=0; for(let i=0;i<p.length;i++){ const a=p[i], b=p[(i+1)%p.length]; s+=a.x*b.y-b.x*a.y; } return s/2; }
+function walls(){
+  const p=S.pts, n=p.length, sg=Math.sign(polyArea(p))||1, out=[];
+  for(let i=0;i<n;i++){
+    const a=p[i], b=p[(i+1)%n], dx=b.x-a.x, dy=b.y-a.y, len=Math.hypot(dx,dy)||1e-6;
+    const ux=dx/len, uy=dy/len;
+    out.push({i,a,b,len,ux,uy,nx:sg*uy,ny:-sg*ux,cs:false,ce:false});
+  }
+  for(let i=0;i<n;i++){
+    const w0=out[(i-1+n)%n], w1=out[i];
+    const c=w0.ux*w1.uy-w0.uy*w1.ux, convex=c*sg>1e-9;
+    w1.cs=convex; w0.ce=convex;
+  }
+  return out;
+}
+function opRange(o, w){
+  const half=Math.min(o.w, w.len)/2;
+  const c=clamp(o.t, half, w.len-half);
+  return [c-half, c+half];
+}
+function nearestWall(p){
+  let best=null;
+  walls().forEach(w=>{
+    const t=clamp((p.x-w.a.x)*w.ux+(p.y-w.a.y)*w.uy, 0, w.len);
+    const qx=w.a.x+w.ux*t, qy=w.a.y+w.uy*t, d=Math.hypot(p.x-qx,p.y-qy);
+    if(!best||d<best.d) best={i:w.i,t,d,x:qx,y:qy};
+  });
+  return best;
+}
+function bounds(){
+  let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;
+  const pts=draft.length?S.pts.concat(draft):S.pts;
+  pts.forEach(p=>{x0=Math.min(x0,p.x);y0=Math.min(y0,p.y);x1=Math.max(x1,p.x);y1=Math.max(y1,p.y);});
+  return {x0,y0,x1,y1};
+}
+
+/* ---------- units ---------- */
+const toU = m => S.unit==='ft' ? m/0.3048 : m;
+const fromU = v => S.unit==='ft' ? v*0.3048 : v;
+const uLabel = () => S.unit==='ft' ? '呎' : 'm';
+function fmt(m){
+  if(S.unit==='ft'){
+    const tin=m/0.0254; let ft=Math.floor(tin/12), inch=Math.round(tin-ft*12);
+    if(inch===12){ft++;inch=0;}
+    return `${ft}' ${inch}"`;
+  }
+  return m.toFixed(2)+' m';
+}
+
+/* ---------- history ---------- */
+function commit(){
+  const now=JSON.stringify(S);
+  if(now!==lastSnap){ hist.push(lastSnap); if(hist.length>100) hist.shift(); lastSnap=now; store.set(now); }
+  renderAll();
+}
+function undo(){
+  if(!hist.length){ toast('冇嘢可以復原'); return; }
+  S=JSON.parse(hist.pop()); lastSnap=JSON.stringify(S); store.set(lastSnap);
+  if(sel && !selTarget()) sel=null;
+  renderAll();
+}
+function selTarget(){
+  if(!sel) return null;
+  if(sel.kind==='item') return S.items.find(x=>x.id===sel.id);
+  if(sel.kind==='opening') return S.openings.find(x=>x.id===sel.id);
+  if(sel.kind==='vertex') return S.pts[sel.i];
+  if(sel.kind==='wall') return sel.i<S.pts.length ? walls()[sel.i] : null;
+  return null;
+}
+
+/* ---------- edits ---------- */
+function setWallLength(i, L){
+  const n=S.pts.length; if(L<0.05) return;
+  const w=walls()[i], dl=L-w.len, dx=w.ux*dl, dy=w.uy*dl;
+  const j=(i+1)%n, k=(i+2)%n;
+  S.pts[j].x+=dx; S.pts[j].y+=dy;
+  if(k!==i){ S.pts[k].x+=dx; S.pts[k].y+=dy; }
+}
+function insertVertex(i, t){
+  const w=walls()[i];
+  S.pts.splice(i+1,0,{x:snap(w.a.x+w.ux*t,0.01),y:snap(w.a.y+w.uy*t,0.01)});
+  S.openings.forEach(o=>{
+    if(o.wall>i) o.wall++;
+    else if(o.wall===i && o.t>t){ o.wall=i+1; o.t-=t; }
+  });
+}
+function deleteVertex(k){
+  const n=S.pts.length; if(n<=3){ toast('最少要 3 個牆角'); return false; }
+  const prev=(k-1+n)%n, lp=walls()[prev].len;
+  S.openings.forEach(o=>{ if(o.wall===k){ o.wall=prev; o.t+=lp; } });
+  S.pts.splice(k,1);
+  S.openings.forEach(o=>{ if(o.wall>k) o.wall--; });
+  return true;
+}
+function setRoom(pts){
+  S.pts=pts.map(p=>({x:+p.x.toFixed(3),y:+p.y.toFixed(3)}));
+  S.openings=[];
+  sel=null;
+}
+function addItem(type){
+  const c=CATALOG[type], b=bounds();
+  const it={id:uid(),type,x:snap((b.x0+b.x1)/2),y:snap((b.y0+b.y1)/2),w:c.w,d:c.d,h:c.h,rot:0,label:c.name};
+  S.items.push(it); sel={kind:'item',id:it.id}; commit();
+}
+function addOpening(type){
+  const ws=walls();
+  const w = sel && sel.kind==='wall' ? ws[sel.i] : ws.reduce((m,x)=>x.len>m.len?x:m, ws[0]);
+  const c=OPENINGS[type];
+  const o={id:uid(),type,wall:w.i,t:w.len/2,w:Math.min(c.w,w.len),h:Math.min(c.h,S.height),sill:c.sill};
+  S.openings.push(o); sel={kind:'opening',id:o.id}; commit();
+}
+function deleteSel(){
+  if(!sel) return;
+  if(sel.kind==='item') S.items=S.items.filter(x=>x.id!==sel.id);
+  else if(sel.kind==='opening') S.openings=S.openings.filter(x=>x.id!==sel.id);
+  else if(sel.kind==='vertex'){ if(!deleteVertex(sel.i)) return; }
+  else return;
+  sel=null; commit();
+}
+
+/* ======================= 2D PLAN ======================= */
+const cv=$('#plan'), ctx=cv.getContext('2d');
+let dpr=1;
+const W2S = (x,y) => [view.ox+x*view.scale, view.oy+y*view.scale];
+const S2W = (sx,sy) => ({x:(sx-view.ox)/view.scale, y:(sy-view.oy)/view.scale});
+
+function fit(){
+  const W=cv.clientWidth, H=cv.clientHeight; if(!W||!H) return;
+  const b=bounds(), bw=Math.max(b.x1-b.x0,1), bh=Math.max(b.y1-b.y0,1);
+  const pad=Math.min(80, W*0.14);
+  view.scale=clamp(Math.min((W-pad*2)/bw,(H-pad*2-40)/bh),8,400);
+  view.ox=(W-bw*view.scale)/2-b.x0*view.scale;
+  view.oy=(H-bh*view.scale)/2-b.y0*view.scale+10;
+  drawPlan();
+}
+function resizePlan(){
+  dpr=Math.min(window.devicePixelRatio||1,2.5);
+  const W=cv.clientWidth, H=cv.clientHeight;
+  if(!W||!H) return;
+  cv.width=Math.round(W*dpr); cv.height=Math.round(H*dpr);
+  drawPlan();
+}
+
+function pill(text, x, y, fg, bg, font){
+  ctx.font=font||'500 11.5px "JetBrains Mono",Consolas,monospace';
+  const tw=ctx.measureText(text).width, h=17;
+  ctx.fillStyle=bg; ctx.beginPath();
+  if(ctx.roundRect) ctx.roundRect(x-tw/2-5,y-h/2,tw+10,h,4); else ctx.rect(x-tw/2-5,y-h/2,tw+10,h);
+  ctx.fill();
+  ctx.fillStyle=fg; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(text,x,y+0.5);
+}
+
+function drawPlan(){
+  const W=cv.clientWidth, H=cv.clientHeight; if(!W||!H) return;
+  const C={bg:cssv('--plan-bg'),grid:cssv('--grid'),grid2:cssv('--grid-strong'),wall:cssv('--wall'),floor:cssv('--floor'),
+    dim:cssv('--dim'),sel:cssv('--sel'),ink:cssv('--ink'),muted:cssv('--muted'),panel:cssv('--panel'),accent:cssv('--accent')};
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.fillStyle=C.bg; ctx.fillRect(0,0,W,H);
+  const sc=view.scale, T=S.wallT;
+
+  // grid
+  const minor = sc>=90?0.1:(sc>=24?0.5:1), major = minor===1?5:1;
+  const wx0=Math.floor(-view.ox/sc/minor)*minor, wx1=(W-view.ox)/sc, wy0=Math.floor(-view.oy/sc/minor)*minor, wy1=(H-view.oy)/sc;
+  ctx.lineWidth=1;
+  for(let x=wx0;x<=wx1;x+=minor){ const s=Math.round(view.ox+x*sc)+.5, mj=Math.abs(x/major-Math.round(x/major))<1e-6; ctx.strokeStyle=mj?C.grid2:C.grid; ctx.beginPath(); ctx.moveTo(s,0); ctx.lineTo(s,H); ctx.stroke(); }
+  for(let y=wy0;y<=wy1;y+=minor){ const s=Math.round(view.oy+y*sc)+.5, mj=Math.abs(y/major-Math.round(y/major))<1e-6; ctx.strokeStyle=mj?C.grid2:C.grid; ctx.beginPath(); ctx.moveTo(0,s); ctx.lineTo(W,s); ctx.stroke(); }
+  $('#scaleNote').textContent=`格 = ${minor<1?(S.unit==='ft'?(minor/0.3048).toFixed(2)+' 呎':Math.round(minor*100)+' cm'):fmt(minor)}`;
+
+  const ws=walls(), p=S.pts;
+  // floor
+  ctx.beginPath(); p.forEach((q,i)=>{ const [x,y]=W2S(q.x,q.y); i?ctx.lineTo(x,y):ctx.moveTo(x,y); }); ctx.closePath();
+  ctx.fillStyle=C.floor; ctx.fill();
+
+  // walls
+  ws.forEach(w=>{
+    const s0=w.cs?-T:0, s1=w.ce?w.len+T:w.len;
+    const ax=w.a.x+w.ux*s0, ay=w.a.y+w.uy*s0, bx=w.a.x+w.ux*s1, by=w.a.y+w.uy*s1;
+    const q=[[ax,ay],[bx,by],[bx+w.nx*T,by+w.ny*T],[ax+w.nx*T,ay+w.ny*T]].map(v=>W2S(v[0],v[1]));
+    ctx.beginPath(); q.forEach((v,i)=>i?ctx.lineTo(v[0],v[1]):ctx.moveTo(v[0],v[1])); ctx.closePath();
+    const on = sel && sel.kind==='wall' && sel.i===w.i;
+    ctx.fillStyle=on?C.sel:C.wall; ctx.fill();
+  });
+
+  // openings
+  S.openings.forEach(o=>{
+    const w=ws[o.wall]; if(!w) return;
+    const [r0,r1]=opRange(o,w);
+    const A=(t,n)=>W2S(w.a.x+w.ux*t+w.nx*n, w.a.y+w.uy*t+w.ny*n);
+    const q=[A(r0,-0.01),A(r1,-0.01),A(r1,T+0.01),A(r0,T+0.01)];
+    ctx.beginPath(); q.forEach((v,i)=>i?ctx.lineTo(v[0],v[1]):ctx.moveTo(v[0],v[1])); ctx.closePath();
+    ctx.fillStyle=C.bg; ctx.fill();
+    const on = sel && sel.kind==='opening' && sel.id===o.id;
+    ctx.strokeStyle=on?C.sel:C.ink; ctx.lineWidth=on?2.2:1.4;
+    if(o.type==='door'){
+      const h=A(r0,0), e=A(r1,0), wpx=(r1-r0)*sc;
+      const lx=h[0]-w.nx*wpx, ly=h[1]-w.ny*wpx;
+      ctx.beginPath(); ctx.moveTo(h[0],h[1]); ctx.lineTo(lx,ly); ctx.stroke();
+      const a0=Math.atan2(ly-h[1],lx-h[0]), a1=Math.atan2(e[1]-h[1],e[0]-h[0]);
+      let da=a1-a0; while(da>Math.PI) da-=2*Math.PI; while(da<-Math.PI) da+=2*Math.PI;
+      ctx.setLineDash([3,3]); ctx.beginPath(); ctx.arc(h[0],h[1],wpx,a0,a1,da<0); ctx.stroke(); ctx.setLineDash([]);
+    } else if(o.type==='window'){
+      [0,T/2,T].forEach(n=>{ const a=A(r0,n), b=A(r1,n); ctx.beginPath(); ctx.moveTo(a[0],a[1]); ctx.lineTo(b[0],b[1]); ctx.stroke(); });
+    } else {
+      ctx.setLineDash([6,4]); const a=A(r0,T/2), b=A(r1,T/2); ctx.beginPath(); ctx.moveTo(a[0],a[1]); ctx.lineTo(b[0],b[1]); ctx.stroke(); ctx.setLineDash([]);
+      const m=A((r0+r1)/2,-0.45); pill('鐵閘 '+fmt(r1-r0),m[0],m[1],C.panel,on?C.sel:C.muted);
+    }
+  });
+
+  // items
+  S.items.forEach(it=>{
+    const c=CATALOG[it.type]||CATALOG.table, [cx,cy]=W2S(it.x,it.y), on=sel&&sel.kind==='item'&&sel.id===it.id;
+    ctx.save(); ctx.translate(cx,cy); ctx.rotate(it.rot*Math.PI/180);
+    const w=it.w*sc, d=it.d*sc;
+    ctx.globalAlpha=.88; ctx.fillStyle=c.color; ctx.fillRect(-w/2,-d/2,w,d); ctx.globalAlpha=1;
+    ctx.lineWidth=on?2.5:1; ctx.strokeStyle=on?C.sel:C.ink; ctx.strokeRect(-w/2,-d/2,w,d);
+    ctx.lineWidth=1; ctx.strokeStyle='rgba(0,0,0,.35)';
+    if(it.type==='shelf'){ ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(-w/2,d/2-1.5); ctx.lineTo(w/2,d/2-1.5); ctx.stroke(); }
+    if(it.type==='gondola'){ ctx.beginPath(); ctx.moveTo(-w/2,0); ctx.lineTo(w/2,0); ctx.stroke(); }
+    if(it.type==='column'){ ctx.beginPath(); ctx.moveTo(-w/2,-d/2); ctx.lineTo(w/2,d/2); ctx.moveTo(w/2,-d/2); ctx.lineTo(-w/2,d/2); ctx.stroke(); }
+    if(it.type==='fridge'){ ctx.setLineDash([2,2]); ctx.beginPath(); ctx.moveTo(-w/2,-d/2+4); ctx.lineTo(w/2,-d/2+4); ctx.stroke(); ctx.setLineDash([]); }
+    ctx.restore();
+    if(Math.min(w,d)>22 || on){
+      ctx.font='500 11px "Noto Sans HK",sans-serif'; ctx.fillStyle='#1a1a1a'; ctx.textAlign='center'; ctx.textBaseline='middle';
+      if(Math.max(w,d)>46) ctx.fillText(it.label||c.name,cx,cy);
+    }
+    if(on){
+      const r=(it.rot%180===0);
+      pill(`${fmt(it.w)} × ${fmt(it.d)}`,cx,cy+(r?d:w)/2+14,C.panel,C.sel);
+    }
+  });
+
+  // dimensions
+  ws.forEach(w=>{
+    const off=T*sc+18;
+    const a=W2S(w.a.x,w.a.y), b=W2S(w.b.x,w.b.y);
+    const ax=a[0]+w.nx*off, ay=a[1]+w.ny*off, bx=b[0]+w.nx*off, by=b[1]+w.ny*off;
+    ctx.strokeStyle=C.dim; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(ax,ay); ctx.lineTo(bx,by);
+    [[ax,ay],[bx,by]].forEach(([x,y])=>{ ctx.moveTo(x-w.nx*5-w.ux*4,y-w.ny*5-w.uy*4); ctx.lineTo(x+w.nx*5+w.ux*4,y+w.ny*5+w.uy*4); });
+    ctx.stroke();
+    if(w.len*sc>34) pill(fmt(w.len),(ax+bx)/2,(ay+by)/2,'#fff',C.dim);
+  });
+
+  // vertices
+  if(mode==='select'){
+    p.forEach((q,i)=>{
+      const [x,y]=W2S(q.x,q.y), on=sel&&sel.kind==='vertex'&&sel.i===i;
+      ctx.beginPath(); ctx.arc(x,y,on?7:5,0,Math.PI*2); ctx.fillStyle=on?C.sel:C.panel; ctx.fill();
+      ctx.lineWidth=2; ctx.strokeStyle=on?C.sel:C.wall; ctx.stroke();
+      const w=ws[i], wp=ws[(i-1+p.length)%p.length];
+      const ix=-(w.nx+wp.nx), iy=-(w.ny+wp.ny), il=Math.hypot(ix,iy)||1;
+      ctx.font='700 11px "Space Grotesk",sans-serif'; ctx.fillStyle=C.muted; ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText(letter(i),x+ix/il*16,y+iy/il*16);
+    });
+  }
+
+  // draft
+  if(mode==='draw'){
+    ctx.strokeStyle=C.accent; ctx.lineWidth=3; ctx.fillStyle=C.accent;
+    if(draft.length){
+      ctx.beginPath(); draft.forEach((q,i)=>{ const [x,y]=W2S(q.x,q.y); i?ctx.lineTo(x,y):ctx.moveTo(x,y); });
+      if(hover){ const [x,y]=W2S(hover.x,hover.y); ctx.lineTo(x,y); }
+      ctx.stroke();
+      for(let i=1;i<draft.length;i++){ const a=draft[i-1], b=draft[i], [x,y]=W2S((a.x+b.x)/2,(a.y+b.y)/2); pill(fmt(Math.hypot(b.x-a.x,b.y-a.y)),x,y-12,'#fff',C.dim); }
+      if(hover){ const a=draft[draft.length-1], [x,y]=W2S((a.x+hover.x)/2,(a.y+hover.y)/2); pill(fmt(Math.hypot(hover.x-a.x,hover.y-a.y)),x,y-12,'#241a00',C.accent); }
+      draft.forEach((q,i)=>{ const [x,y]=W2S(q.x,q.y); ctx.beginPath(); ctx.arc(x,y,i===0&&draft.length>=3?9:5,0,Math.PI*2); ctx.fillStyle=i===0?C.accent:C.panel; ctx.fill(); ctx.lineWidth=2; ctx.stroke(); });
+    }
+    if(hover){ const [x,y]=W2S(hover.x,hover.y); ctx.strokeStyle=C.ink; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(x-8,y); ctx.lineTo(x+8,y); ctx.moveTo(x,y-8); ctx.lineTo(x,y+8); ctx.stroke(); }
+  }
+}
+
+/* ---------- plan interaction ---------- */
+const ptrs=new Map();
+let drag=null, pinch=null, gestureMoved=false, hadPinch=false;
+
+function hitTest(sx, sy, touch){
+  const R=touch?18:11, w=S2W(sx,sy);
+  for(let i=0;i<S.pts.length;i++){ const [x,y]=W2S(S.pts[i].x,S.pts[i].y); if(Math.hypot(x-sx,y-sy)<=R) return {kind:'vertex',i}; }
+  const ws=walls();
+  for(const o of S.openings){
+    const wl=ws[o.wall]; if(!wl) continue;
+    const [r0,r1]=opRange(o,wl);
+    const t=(w.x-wl.a.x)*wl.ux+(w.y-wl.a.y)*wl.uy, n=(w.x-wl.a.x)*wl.nx+(w.y-wl.a.y)*wl.ny;
+    const tol=R/view.scale;
+    if(t>=r0-tol*0.3&&t<=r1+tol*0.3&&n>=-Math.max(tol,(o.type==='door'?(r1-r0):0))&&n<=S.wallT+tol) return {kind:'opening',id:o.id};
+  }
+  for(let k=S.items.length-1;k>=0;k--){
+    const it=S.items[k], a=-it.rot*Math.PI/180, dx=w.x-it.x, dy=w.y-it.y;
+    const lx=dx*Math.cos(a)-dy*Math.sin(a), ly=dx*Math.sin(a)+dy*Math.cos(a);
+    if(Math.abs(lx)<=it.w/2&&Math.abs(ly)<=it.d/2) return {kind:'item',id:it.id};
+  }
+  const nw=nearestWall(w);
+  if(nw){ const wl=ws[nw.i], n=(w.x-wl.a.x)*wl.nx+(w.y-wl.a.y)*wl.ny; if(n>=-R/view.scale&&n<=S.wallT+R/view.scale&&nw.t>0&&nw.t<wl.len) return {kind:'wall',i:nw.i,t:nw.t}; }
+  return null;
+}
+function drawPoint(sx, sy){
+  let p=S2W(sx,sy); p={x:snap(p.x),y:snap(p.y)};
+  const last=draft[draft.length-1];
+  if(last){
+    if(Math.abs(p.x-last.x)*view.scale<12) p.x=last.x;
+    if(Math.abs(p.y-last.y)*view.scale<12) p.y=last.y;
+  }
+  if(draft.length>=3){ const [fx,fy]=W2S(draft[0].x,draft[0].y); if(Math.hypot(fx-sx,fy-sy)<16) p={...draft[0],close:true}; }
+  else if(draft.length>=1){
+    const f=draft[0];
+    if(Math.abs(p.x-f.x)*view.scale<8) p.x=f.x;
+    if(Math.abs(p.y-f.y)*view.scale<8) p.y=f.y;
+  }
+  return p;
+}
+function addDraft(p){
+  if(p.close){ finishDraft(); return; }
+  const last=draft[draft.length-1];
+  if(last && Math.hypot(p.x-last.x,p.y-last.y)<0.05) return;
+  draft.push({x:p.x,y:p.y}); updateDrawHint(); drawPlan();
+}
+function finishDraft(){
+  if(draft.length<3){ toast('最少要 3 個牆角先可以閉合'); return; }
+  setRoom(draft); draft=[]; hover=null; setMode('select'); commit(); fit();
+  toast('平面已建立，可以喺右邊微調每幅牆長度');
+}
+function updateDrawHint(){
+  $('#drawHint').textContent = draft.length
+    ? `已放 ${draft.length} 個牆角。${draft.length>=3?'點返黃色起點或按「閉合」完成。':'繼續點擊下一個牆角。'}`
+    : '在圖上逐個點擊牆角，或輸入量到的長度再按方向鍵（由 0,0 開始）。';
+}
+
+cv.addEventListener('pointerdown', e=>{
+  cv.setPointerCapture(e.pointerId);
+  ptrs.set(e.pointerId,{x:e.offsetX,y:e.offsetY,sx:e.offsetX,sy:e.offsetY});
+  if(ptrs.size===1){ gestureMoved=false; hadPinch=false; }
+  if(ptrs.size===2){
+    const [a,b]=[...ptrs.values()];
+    pinch={d0:Math.hypot(a.x-b.x,a.y-b.y),s0:view.scale,mx:(a.x+b.x)/2,my:(a.y+b.y)/2,ox:view.ox,oy:view.oy};
+    hadPinch=true;
+    if(drag && drag.kind!=='pan') { S=JSON.parse(lastSnap); }
+    drag=null; return;
+  }
+  if(ptrs.size>2) return;
+  const touch=e.pointerType==='touch';
+  const w=S2W(e.offsetX,e.offsetY);
+  if(mode==='draw'){ drag={kind:'pan',sx:e.offsetX,sy:e.offsetY,ox:view.ox,oy:view.oy}; return; }
+  const h=hitTest(e.offsetX,e.offsetY,touch);
+  if(h){
+    sel = h.kind==='wall' ? {kind:'wall',i:h.i} : h;
+    if(h.kind==='item'){ const it=S.items.find(x=>x.id===h.id); drag={kind:'item',it,x0:it.x,y0:it.y,w0:w}; }
+    else if(h.kind==='vertex'){ const q=S.pts[h.i]; drag={kind:'vertex',i:h.i,x0:q.x,y0:q.y,w0:w}; }
+    else if(h.kind==='opening'){ drag={kind:'opening',o:S.openings.find(x=>x.id===h.id)}; }
+    else drag={kind:'pan',sx:e.offsetX,sy:e.offsetY,ox:view.ox,oy:view.oy};
+  } else {
+    sel=null; drag={kind:'pan',sx:e.offsetX,sy:e.offsetY,ox:view.ox,oy:view.oy};
+  }
+  renderPanel(); drawPlan();
+});
+cv.addEventListener('pointermove', e=>{
+  const pp=ptrs.get(e.pointerId);
+  if(pp){ pp.x=e.offsetX; pp.y=e.offsetY; if(Math.hypot(pp.x-pp.sx,pp.y-pp.sy)>6) gestureMoved=true; }
+  if(pinch && ptrs.size>=2){
+    const [a,b]=[...ptrs.values()], d=Math.hypot(a.x-b.x,a.y-b.y), mx=(a.x+b.x)/2, my=(a.y+b.y)/2;
+    const ns=clamp(pinch.s0*d/pinch.d0,8,400), wx=(pinch.mx-pinch.ox)/pinch.s0, wy=(pinch.my-pinch.oy)/pinch.s0;
+    view.scale=ns; view.ox=mx-wx*ns; view.oy=my-wy*ns; drawPlan(); return;
+  }
+  if(mode==='draw' && (!drag || !gestureMoved)){ hover=drawPoint(e.offsetX,e.offsetY); drawPlan(); }
+  if(!drag){
+    if(mode==='select' && e.pointerType==='mouse'){ const h=hitTest(e.offsetX,e.offsetY,false); cv.style.cursor=h?(h.kind==='wall'?'pointer':'move'):'grab'; }
+    else if(mode==='draw') cv.style.cursor='crosshair';
+    return;
+  }
+  const w=S2W(e.offsetX,e.offsetY);
+  if(drag.kind==='pan'){ if(!gestureMoved) return; view.ox=drag.ox+e.offsetX-drag.sx; view.oy=drag.oy+e.offsetY-drag.sy; drawPlan(); return; }
+  if(!gestureMoved) return;
+  if(drag.kind==='item'){ drag.it.x=snap(drag.x0+w.x-drag.w0.x); drag.it.y=snap(drag.y0+w.y-drag.w0.y); }
+  else if(drag.kind==='vertex'){
+    const n=S.pts.length, q=S.pts[drag.i];
+    let x=snap(drag.x0+w.x-drag.w0.x), y=snap(drag.y0+w.y-drag.w0.y);
+    [S.pts[(drag.i-1+n)%n],S.pts[(drag.i+1)%n]].forEach(nb=>{
+      if(Math.abs(x-nb.x)*view.scale<10) x=nb.x;
+      if(Math.abs(y-nb.y)*view.scale<10) y=nb.y;
+    });
+    q.x=x; q.y=y;
+  } else if(drag.kind==='opening'){
+    const nw=nearestWall(w); drag.o.wall=nw.i; drag.o.t=snap(nw.t);
+  }
+  liveUpdate();
+});
+function endPointer(e){
+  ptrs.delete(e.pointerId);
+  if(ptrs.size<2) pinch=null;
+  if(ptrs.size>0) return;
+  if(mode==='draw' && !gestureMoved && !hadPinch){ addDraft(drawPoint(e.offsetX,e.offsetY)); }
+  if(drag && drag.kind!=='pan' && gestureMoved) commit();
+  drag=null;
+}
+cv.addEventListener('pointerup', endPointer);
+cv.addEventListener('pointercancel', e=>{ ptrs.delete(e.pointerId); pinch=null; drag=null; });
+cv.addEventListener('pointerleave', ()=>{ if(mode==='draw'&&!ptrs.size){ hover=null; drawPlan(); } });
+cv.addEventListener('wheel', e=>{
+  e.preventDefault();
+  const f=Math.exp(-e.deltaY*0.0015), ns=clamp(view.scale*f,8,400);
+  const wx=(e.offsetX-view.ox)/view.scale, wy=(e.offsetY-view.oy)/view.scale;
+  view.scale=ns; view.ox=e.offsetX-wx*ns; view.oy=e.offsetY-wy*ns; drawPlan();
+},{passive:false});
+cv.addEventListener('dblclick', e=>{
+  if(mode!=='select') return;
+  const h=hitTest(e.offsetX,e.offsetY,false);
+  if(h && h.kind==='wall'){ insertVertex(h.i,snap(h.t,0.01)); sel={kind:'vertex',i:h.i+1}; commit(); toast('已加牆角，可拖動做凹位'); }
+});
+
+let liveRaf=0;
+function liveUpdate(){
+  if(liveRaf) return;
+  liveRaf=requestAnimationFrame(()=>{ liveRaf=0; drawPlan(); renderStats(); renderWalls(); schedule3D(); });
+}
+
+function setMode(m){
+  mode=m; draft=[]; hover=null;
+  $('#mSelect').setAttribute('aria-pressed',m==='select');
+  $('#mDraw').setAttribute('aria-pressed',m==='draw');
+  $('#drawBar').hidden=m!=='draw';
+  if(m==='draw'){ sel=null; renderPanel(); }
+  cv.style.cursor=m==='draw'?'crosshair':'grab';
+  updateDrawHint(); drawPlan();
+}
+$('#mSelect').onclick=()=>setMode('select');
+$('#mDraw').onclick=()=>setMode('draw');
+$('#fitBtn').onclick=fit;
+$('#closeDraft').onclick=finishDraft;
+$('#undoDraft').onclick=()=>{ draft.pop(); updateDrawHint(); drawPlan(); };
+$('#cancelDraft').onclick=()=>setMode('select');
+$$('#drawBar .arrows button').forEach(b=>b.onclick=()=>{
+  const L=fromU(parseFloat($('#segLen').value));
+  if(!(L>0)){ toast('請先輸入長度'); return; }
+  if(!draft.length) draft.push({x:0,y:0});
+  const l=draft[draft.length-1], d=b.dataset.d;
+  const p={x:l.x+(d==='R'?L:d==='L'?-L:0), y:l.y+(d==='D'?L:d==='U'?-L:0)};
+  p.x=+p.x.toFixed(3); p.y=+p.y.toFixed(3);
+  if(draft.length>=3 && Math.hypot(p.x-draft[0].x,p.y-draft[0].y)<0.02){ finishDraft(); return; }
+  draft.push(p); updateDrawHint(); fit();
+});
+
+/* ======================= PANEL ======================= */
+function numField(id, label, m, set, opt={}){
+  const isLen=opt.len!==false;
+  const wrap=document.createElement('label'); wrap.className='fld';
+  const sp=document.createElement('span'); sp.textContent=label;
+  const inp=document.createElement('input'); inp.type='number'; inp.inputMode='decimal'; inp.id=id;
+  inp.step=opt.step||(isLen?(S.unit==='ft'?'0.1':'0.01'):'1');
+  inp.value=isLen?+toU(m).toFixed(S.unit==='ft'?2:3):m;
+  const em=document.createElement('em'); em.textContent=opt.unit||(isLen?uLabel():'');
+  inp.addEventListener('change',()=>{ const v=parseFloat(inp.value); if(!isFinite(v)) return; set(isLen?fromU(v):v); commit(); });
+  wrap.append(sp,inp,em); return wrap;
+}
+function renderStats(){
+  const A=Math.abs(polyArea(S.pts)), ws=walls(), P=ws.reduce((s,w)=>s+w.len,0);
+  const op=S.openings.reduce((s,o)=>{ const w=ws[o.wall]; if(!w) return s; const [a,b]=opRange(o,w); return s+(b-a)*Math.min(o.h,S.height-o.sill); },0);
+  const foot=S.items.reduce((s,it)=>s+it.w*it.d,0);
+  const free=Math.max(0,A-foot);
+  const ft2=m=>Math.round(m*10.7639).toLocaleString('en');
+  $('#stats').innerHTML=`
+    <div class="big"><span class="k">實用面積</span><b>${A.toFixed(1)}<small> m²</small></b><span class="sub">${ft2(A)} 平方呎</span></div>
+    <dl>
+      <div><dt>周長</dt><dd>${fmt(P)}</dd></div>
+      <div><dt>樓底</dt><dd>${fmt(S.height)}</dd></div>
+      <div><dt>空間體積</dt><dd>${(A*S.height).toFixed(1)} m³</dd></div>
+      <div><dt>牆身面積（扣門窗）</dt><dd>${(P*S.height-op).toFixed(1)} m²</dd></div>
+      <div><dt>物件佔地</dt><dd>${foot.toFixed(1)} m² · ${ft2(foot)} 呎²</dd></div>
+      <div><dt>剩餘走動空間</dt><dd>${A?Math.round(free/A*100):0}%</dd></div>
+    </dl>`;
+}
+function renderWalls(){
+  const ol=$('#walls');
+  if(ol.contains(document.activeElement)) return;
+  ol.innerHTML='';
+  const n=S.pts.length;
+  walls().forEach(w=>{
+    const li=document.createElement('li');
+    if(sel&&sel.kind==='wall'&&sel.i===w.i) li.className='on';
+    const b=document.createElement('button'); b.textContent=`${letter(w.i)} → ${letter((w.i+1)%n)}`;
+    b.onclick=()=>{ sel={kind:'wall',i:w.i}; renderPanel(); drawPlan(); };
+    li.append(b, numField('wall-'+w.i,'',w.len,v=>setWallLength(w.i,v)));
+    ol.append(li);
+  });
+}
+function renderInspector(){
+  const box=$('#inspector'), t=selTarget();
+  if(!t){ box.hidden=true; box.innerHTML=''; return; }
+  box.hidden=false; box.className='insp'; box.innerHTML='';
+  const head=document.createElement('header'), body=document.createElement('div'); body.style.cssText='display:grid;gap:8px';
+  const del=document.createElement('button'); del.className='btn danger'; del.textContent='刪除'; del.onclick=deleteSel;
+  const title=document.createElement('b');
+  head.append(title);
+  if(sel.kind==='item'){
+    const c=CATALOG[t.type];
+    title.textContent=c.name;
+    const nm=document.createElement('label'); nm.className='fld'; nm.innerHTML='<span>名稱</span>';
+    const ni=document.createElement('input'); ni.id='insp-label'; ni.value=t.label||''; ni.style.fontFamily='var(--font-body)';
+    ni.addEventListener('change',()=>{ t.label=ni.value; commit(); }); nm.append(ni);
+    const r1=document.createElement('div'); r1.className='row2';
+    r1.append(numField('insp-w','闊',t.w,v=>t.w=Math.max(0.05,v)), numField('insp-d','深',t.d,v=>t.d=Math.max(0.05,v)));
+    const r2=document.createElement('div'); r2.className='row2';
+    if(t.type!=='column') r2.append(numField('insp-h','高',t.h,v=>t.h=Math.max(0.05,v)));
+    r2.append(numField('insp-rot','角度',t.rot,v=>t.rot=((Math.round(v)%360)+360)%360,{len:false,unit:'°'}));
+    const btns=document.createElement('div'); btns.className='btnrow';
+    const rot=document.createElement('button'); rot.className='btn'; rot.textContent='旋轉 90°'; rot.onclick=()=>{ t.rot=(t.rot+90)%360; commit(); };
+    const dup=document.createElement('button'); dup.className='btn'; dup.textContent='複製一件';
+    dup.onclick=()=>{ const c2={...t,id:uid()}; const a=t.rot*Math.PI/180; c2.x=snap(t.x+Math.cos(a)*t.w); c2.y=snap(t.y+Math.sin(a)*t.w); S.items.push(c2); sel={kind:'item',id:c2.id}; commit(); };
+    btns.append(rot,dup,del);
+    body.append(nm,r1,r2,btns);
+  } else if(sel.kind==='opening'){
+    const w=walls()[t.wall];
+    title.textContent=`${OPENINGS[t.type].name} · 牆 ${letter(t.wall)}→${letter((t.wall+1)%S.pts.length)}`;
+    const r1=document.createElement('div'); r1.className='row2';
+    r1.append(numField('insp-ow','闊',t.w,v=>t.w=clamp(v,0.2,w.len)), numField('insp-oh','高',t.h,v=>t.h=clamp(v,0.2,S.height)));
+    const r2=document.createElement('div'); r2.className='row2';
+    if(t.type==='window') r2.append(numField('insp-sill','窗台',t.sill,v=>t.sill=clamp(v,0,S.height-0.1)));
+    r2.append(numField('insp-ot','離牆角',opRange(t,w)[0],v=>t.t=v+t.w/2));
+    const btns=document.createElement('div'); btns.className='btnrow'; btns.append(del);
+    body.append(r1,r2,btns);
+  } else if(sel.kind==='vertex'){
+    title.textContent=`牆角 ${letter(sel.i)}`;
+    const r1=document.createElement('div'); r1.className='row2';
+    r1.append(numField('insp-vx','X',t.x,v=>t.x=v), numField('insp-vy','Y',t.y,v=>t.y=v));
+    const btns=document.createElement('div'); btns.className='btnrow'; del.textContent='刪除牆角'; btns.append(del);
+    body.append(r1,btns);
+  } else if(sel.kind==='wall'){
+    title.textContent=`牆 ${letter(sel.i)} → ${letter((sel.i+1)%S.pts.length)}`;
+    body.append(numField('insp-wl','長度',t.len,v=>setWallLength(sel.i,v)));
+    const btns=document.createElement('div'); btns.className='btnrow';
+    Object.entries(OPENINGS).forEach(([k,o])=>{ const b=document.createElement('button'); b.className='btn'; b.textContent='加'+o.name; b.onclick=()=>addOpening(k); btns.append(b); });
+    const split=document.createElement('button'); split.className='btn'; split.textContent='中間加牆角';
+    split.onclick=()=>{ const i=sel.i; insertVertex(i,snap(t.len/2,0.01)); sel={kind:'vertex',i:i+1}; commit(); };
+    btns.append(split);
+    const tip=document.createElement('p'); tip.className='note'; tip.style.margin='0'; tip.textContent='提示：喺平面圖雙擊牆身都可以加牆角，再拖出凹位。';
+    body.append(btns,tip);
+  }
+  const x=document.createElement('button'); x.className='btn'; x.textContent='✕'; x.setAttribute('aria-label','取消選取'); x.onclick=()=>{ sel=null; renderPanel(); drawPlan(); };
+  head.append(x);
+  box.append(head,body);
+}
+function renderRoom(){
+  const rf=$('#roomFields');
+  if(!rf.contains(document.activeElement)){
+    rf.innerHTML='';
+    rf.append(numField('room-h','樓底高',S.height,v=>S.height=clamp(v,1.8,12)), numField('room-t','牆厚',S.wallT,v=>S.wallT=clamp(v,0.05,0.6)));
+  }
+  const tf=$('#tplFields');
+  if(!tf.contains(document.activeElement)){
+    const b=bounds(), old={w:tplW??(b.x1-b.x0),d:tplD??(b.y1-b.y0)};
+    tf.innerHTML='';
+    tf.append(numField('tpl-w','闊',old.w,v=>tplW=v), numField('tpl-d','深',old.d,v=>tplD=v));
+  }
+}
+let tplW=null, tplD=null;
+function renderPanel(){ renderStats(); renderInspector(); renderWalls(); renderRoom();
+  $('#projName').value=S.name||'';
+  $$('#unitSeg button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.u===S.unit));
+  $('#segUnit').textContent=uLabel();
+  $('#undoBtn').disabled=!hist.length;
+}
+function renderAll(){ renderPanel(); drawPlan(); schedule3D(); }
+
+$('#addItems').innerHTML=Object.entries(CATALOG).map(([k,c])=>`<button data-k="${k}"><i style="background:${c.color}"></i>${c.name}</button>`).join('');
+$$('#addItems button').forEach(b=>b.onclick=()=>addItem(b.dataset.k));
+const opIcon={shutter:'#6b726d',door:'#8a5a2b',window:'#7fb2d6'};
+$('#addOpen').innerHTML=Object.entries(OPENINGS).map(([k,c])=>`<button data-k="${k}"><i style="background:${opIcon[k]}"></i>${c.name}</button>`).join('');
+$$('#addOpen button').forEach(b=>b.onclick=()=>addOpening(b.dataset.k));
+
+$('#mkRect').onclick=()=>{
+  const b=bounds(), w=tplW??(b.x1-b.x0), d=tplD??(b.y1-b.y0);
+  setRoom([{x:0,y:0},{x:w,y:0},{x:w,y:d},{x:0,y:d}]);
+  S.items=S.items.filter(it=>it.x>=0&&it.x<=w&&it.y>=0&&it.y<=d);
+  commit(); fit();
+};
+$('#mkL').onclick=()=>{
+  const b=bounds(), w=tplW??(b.x1-b.x0), d=tplD??(b.y1-b.y0);
+  setRoom([{x:0,y:0},{x:w,y:0},{x:w,y:d*0.6},{x:w*0.6,y:d*0.6},{x:w*0.6,y:d},{x:0,y:d}].map(p=>({x:snap(p.x),y:snap(p.y)})));
+  commit(); fit();
+};
+$('#projName').addEventListener('change',e=>{ S.name=e.target.value; commit(); });
+$$('#unitSeg button').forEach(b=>b.onclick=()=>{ S.unit=b.dataset.u; commit(); build3DNow(); });
+$('#undoBtn').onclick=undo;
+
+const stage=$('#stage');
+function setView(v){
+  stage.dataset.view=v;
+  $$('#viewSeg button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.v===v));
+  requestAnimationFrame(()=>{ resizePlan(); if(v!=='plan'){ ensure3D(); resize3D(); build3DNow(); } });
+}
+$$('#viewSeg button').forEach(b=>b.onclick=()=>setView(b.dataset.v));
+
+/* clear: two-step confirmation inside the page */
+let clearArmed=0;
+$('#clearBtn').onclick=e=>{
+  const b=e.currentTarget;
+  if(Date.now()-clearArmed<4000){
+    S.items=[]; clearArmed=0; b.textContent='清空重畫';
+    setRoom([{x:0,y:0},{x:4,y:0},{x:4,y:3},{x:0,y:3}]);
+    commit(); setMode('draw'); fit();
+    toast('已清空。點擊牆角或輸入長度重新畫'); return;
+  }
+  clearArmed=Date.now(); b.textContent='再按一次確定清空';
+  setTimeout(()=>{ if(Date.now()-clearArmed>=3900) b.textContent='清空重畫'; },4000);
+};
+$('#sampleBtn').onclick=()=>{ S=sample(); sel=null; commit(); fit(); };
+$('#copyBtn').onclick=()=>{
+  const txt=JSON.stringify(S,null,1);
+  const fallback=()=>{ $('#importBox').hidden=false; $('#io').value=txt; $('#io').select(); toast('已選取資料，請按 Ctrl+C 複製'); };
+  try{ navigator.clipboard.writeText(txt).then(()=>toast('已複製專案資料'),fallback); }catch(e){ fallback(); }
+};
+$('#importToggle').onclick=()=>{ $('#importBox').hidden=!$('#importBox').hidden; };
+$('#importBtn').onclick=()=>{
+  try{
+    const d=JSON.parse($('#io').value);
+    if(!Array.isArray(d.pts)||d.pts.length<3) throw 0;
+    S={name:d.name||'匯入專案',unit:d.unit==='ft'?'ft':'m',height:+d.height||3,wallT:+d.wallT||0.15,pts:d.pts,openings:d.openings||[],items:d.items||[]};
+    sel=null; commit(); fit(); toast('已匯入'); $('#importBox').hidden=true;
+  }catch(e){ toast('資料格式唔啱，請貼上由「複製資料」得到嘅內容'); }
+};
+
+let toastT=0;
+function toast(msg){
+  let t=$('.toast'); if(!t){ t=document.createElement('div'); t.className='toast'; t.setAttribute('role','status'); document.body.append(t); }
+  t.textContent=msg; t.hidden=false; clearTimeout(toastT); toastT=setTimeout(()=>t.hidden=true,2600);
+}
+
+document.addEventListener('keydown',e=>{
+  const typing=/INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName||'');
+  if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'&&!typing){ e.preventDefault(); undo(); return; }
+  if(typing) return;
+  if(e.key==='Escape'){ if(mode==='draw') setMode('select'); else { sel=null; renderPanel(); drawPlan(); } }
+  if((e.key==='Delete'||e.key==='Backspace')&&sel){ e.preventDefault(); deleteSel(); }
+  if(e.key.toLowerCase()==='r'&&sel&&sel.kind==='item'){ const t=selTarget(); t.rot=(t.rot+90)%360; commit(); }
+  if(e.key==='Enter'&&mode==='draw') finishDraft();
+});
+
+/* ======================= 3D ======================= */
+let R3=null, built=false, dirty3=true;
+const has3=typeof THREE!=='undefined';
+function ensure3D(){
+  if(R3||!has3) return;
+  const host=$('#three');
+  const renderer=new THREE.WebGLRenderer({antialias:true,preserveDrawingBuffer:true});
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
+  renderer.shadowMap.enabled=true; renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+  renderer.outputEncoding=THREE.sRGBEncoding;
+  host.append(renderer.domElement);
+  const scene=new THREE.Scene();
+  const camera=new THREE.PerspectiveCamera(45,1,0.05,500);
+  const controls=new THREE.OrbitControls(camera,renderer.domElement);
+  controls.enableDamping=true; controls.dampingFactor=0.08; controls.maxPolarAngle=Math.PI/2-0.03; controls.minDistance=1; controls.maxDistance=120;
+  scene.add(new THREE.HemisphereLight(0xffffff,0x8a8678,0.75));
+  const sun=new THREE.DirectionalLight(0xffffff,0.75);
+  sun.position.set(8,16,6); sun.castShadow=true; sun.shadow.mapSize.set(2048,2048);
+  const sc=sun.shadow.camera; sc.left=-20; sc.right=20; sc.top=20; sc.bottom=-20; sc.far=60; sun.shadow.bias=-0.0005;
+  scene.add(sun); scene.add(sun.target);
+  const group=new THREE.Group(); scene.add(group);
+  R3={renderer,scene,camera,controls,group,sun,host};
+  new ResizeObserver(resize3D).observe(host);
+  resize3D();
+  (function loop(){
+    requestAnimationFrame(loop);
+    if(stage.dataset.view==='plan'||arActive) return;
+    if(dirty3){ dirty3=false; build3D(); }
+    controls.update(); renderer.render(scene,camera);
+  })();
+}
+function resize3D(){
+  if(!R3) return;
+  const w=R3.host.clientWidth, h=R3.host.clientHeight; if(!w||!h) return;
+  R3.renderer.setSize(w,h,false); R3.camera.aspect=w/h; R3.camera.updateProjectionMatrix();
+}
+function schedule3D(){ dirty3=true; }
+function build3DNow(){ dirty3=true; }
+
+function textSprite(text, bg, fg){
+  const c=document.createElement('canvas'), g=c.getContext('2d'), fs=44;
+  g.font=`600 ${fs}px "JetBrains Mono",Consolas,monospace`;
+  const tw=g.measureText(text).width; c.width=Math.ceil(tw+36); c.height=fs+24;
+  g.font=`600 ${fs}px "JetBrains Mono",Consolas,monospace`;
+  g.fillStyle=bg; if(g.roundRect){ g.beginPath(); g.roundRect(0,0,c.width,c.height,12); g.fill(); } else g.fillRect(0,0,c.width,c.height);
+  g.fillStyle=fg; g.textBaseline='middle'; g.textAlign='center'; g.fillText(text,c.width/2,c.height/2+2);
+  const tex=new THREE.CanvasTexture(c); tex.encoding=THREE.sRGBEncoding;
+  const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:tex,depthTest:false,transparent:true}));
+  const hh=0.32; sp.scale.set(hh*c.width/c.height,hh,1); sp.renderOrder=10;
+  return sp;
+}
+function disposeGroup(g){
+  g.traverse(o=>{ if(o.geometry) o.geometry.dispose(); if(o.material){ (Array.isArray(o.material)?o.material:[o.material]).forEach(m=>{ if(m.map) m.map.dispose(); m.dispose(); }); } });
+  while(g.children.length) g.remove(g.children[0]);
+}
+function box(w,h,d,mat,x,y,z,ry=0){
+  const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);
+  m.position.set(x,y,z); m.rotation.y=ry; m.castShadow=true; m.receiveShadow=true; return m;
+}
+function build3D(){
+  if(!R3) return;
+  const {scene,group}=R3; disposeGroup(group);
+  const dark=getComputedStyle(document.documentElement).colorScheme==='dark' || cssv('--bg').toLowerCase()==='#111513';
+  scene.background=new THREE.Color(cssv('--soft')||'#dfe4dd');
+  const H=S.height, T=S.wallT, Hc=cut?Math.min(1.2,H):H, ws=walls();
+  if(S.pts.length<3) return;
+
+  // ground
+  const b=bounds(), cx=(b.x0+b.x1)/2, cz=(b.y0+b.y1)/2, span=Math.max(b.x1-b.x0,b.y1-b.y0,4);
+  const ground=new THREE.Mesh(new THREE.PlaneGeometry(span*6,span*6),new THREE.MeshStandardMaterial({color:dark?0x1b211e:0xd9ddd5,roughness:1}));
+  ground.rotation.x=-Math.PI/2; ground.position.set(cx,-0.012,cz); ground.receiveShadow=true; group.add(ground);
+
+  // floor
+  const shape=new THREE.Shape(); S.pts.forEach((p,i)=>i?shape.lineTo(p.x,-p.y):shape.moveTo(p.x,-p.y));
+  const floor=new THREE.Mesh(new THREE.ShapeGeometry(shape),new THREE.MeshStandardMaterial({color:0xe2d3b4,roughness:0.85,side:THREE.DoubleSide}));
+  floor.rotation.x=-Math.PI/2; floor.receiveShadow=true; group.add(floor);
+  // floor tile lines (60cm)
+  const lines=[], tile=0.6;
+  for(let x=Math.ceil(b.x0/tile)*tile;x<b.x1;x+=tile) lines.push(new THREE.Vector3(x,0.002,b.y0),new THREE.Vector3(x,0.002,b.y1));
+  for(let z=Math.ceil(b.y0/tile)*tile;z<b.y1;z+=tile) lines.push(new THREE.Vector3(b.x0,0.002,z),new THREE.Vector3(b.x1,0.002,z));
+  const tl=new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(lines),new THREE.LineBasicMaterial({color:0xbfae8c,transparent:true,opacity:0.55}));
+  // clip tile lines to floor via stencil is heavy; keep only when room is a rectangle
+  if(S.pts.length===4) group.add(tl);
+
+  const wallMat=new THREE.MeshStandardMaterial({color:0xefece5,roughness:0.92});
+  const edgeMat=new THREE.LineBasicMaterial({color:0x3a423d,transparent:true,opacity:0.35});
+  const addSeg=(w,s0,s1,y0,y1)=>{
+    y1=Math.min(y1,Hc); if(s1-s0<0.005||y1-y0<0.005) return;
+    const mx=w.a.x+w.ux*(s0+s1)/2+w.nx*T/2, mz=w.a.y+w.uy*(s0+s1)/2+w.ny*T/2;
+    const m=box(s1-s0,y1-y0,T,wallMat,mx,(y0+y1)/2,mz,-Math.atan2(w.uy,w.ux));
+    group.add(m);
+    const e=new THREE.LineSegments(new THREE.EdgesGeometry(m.geometry),edgeMat); e.position.copy(m.position); e.rotation.copy(m.rotation); group.add(e);
+  };
+  ws.forEach(w=>{
+    const s0=w.cs?-T:0, s1=w.ce?w.len+T:w.len;
+    const ops=S.openings.filter(o=>o.wall===w.i).map(o=>({o,r:opRange(o,w)})).sort((a,b)=>a.r[0]-b.r[0]);
+    let cur=s0;
+    ops.forEach(({o,r})=>{
+      const top=Math.min(H,o.sill+o.h);
+      if(r[0]>cur) addSeg(w,cur,r[0],0,H);
+      const a=Math.max(r[0],cur);
+      if(r[1]>a){ addSeg(w,a,r[1],0,o.sill); addSeg(w,a,r[1],top,H); }
+      cur=Math.max(cur,r[1]);
+      const mid=(r[0]+r[1])/2, ow=r[1]-r[0], ry=-Math.atan2(w.uy,w.ux);
+      const px=w.a.x+w.ux*mid, pz=w.a.y+w.uy*mid;
+      if(o.type==='window'&&o.sill<Hc){
+        const gh=Math.min(top,Hc)-o.sill;
+        const glass=box(ow,gh,0.02,new THREE.MeshStandardMaterial({color:0x9fd0ee,transparent:true,opacity:0.35,roughness:0.1,metalness:0.1}),px+w.nx*T/2,o.sill+gh/2,pz+w.ny*T/2,ry);
+        glass.castShadow=false; group.add(glass);
+        const frame=new THREE.MeshStandardMaterial({color:0x5a6068});
+        group.add(box(ow,0.04,T+0.02,frame,px+w.nx*T/2,o.sill+0.02,pz+w.ny*T/2,ry));
+      } else if(o.type==='door'&&!cut){
+        const leaf=box(ow-0.04,top-0.02,0.04,new THREE.MeshStandardMaterial({color:0x8a5a2b,roughness:0.7}),px+w.nx*T*0.8,(top-0.02)/2,pz+w.ny*T*0.8,ry);
+        group.add(leaf);
+        group.add(box(0.03,0.03,0.08,new THREE.MeshStandardMaterial({color:0xd0d0d0,metalness:0.8,roughness:0.3}),
+          px+w.ux*(ow/2-0.12)+w.nx*(T*0.8-0.05),1.0,pz+w.uy*(ow/2-0.12)+w.ny*(T*0.8-0.05),ry));
+      } else if(o.type==='shutter'&&!cut){
+        group.add(box(ow+0.1,0.28,0.32,new THREE.MeshStandardMaterial({color:0x6b726d,metalness:0.4,roughness:0.5}),px+w.nx*(T+0.16),Math.min(top,H)-0.14,pz+w.ny*(T+0.16),ry));
+      }
+    });
+    addSeg(w,cur,s1,0,H);
+    if(showDims){
+      const sp=textSprite(fmt(w.len),'#b4460e','#ffffff');
+      sp.position.set(w.a.x+w.ux*w.len/2+w.nx*(T+0.45),Hc+0.35,w.a.y+w.uy*w.len/2+w.ny*(T+0.45));
+      group.add(sp);
+    }
+  });
+  if(showDims){
+    const A=Math.abs(polyArea(S.pts));
+    const sp=textSprite(`${A.toFixed(1)} m² · ${Math.round(A*10.7639)} 呎²`,'#1a211d','#f5c22e');
+    const c=centroid(); sp.position.set(c.x,0.25,c.y); sp.scale.multiplyScalar(1.3); group.add(sp);
+  }
+
+  // items
+  S.items.forEach(it=>{
+    const c=CATALOG[it.type]||CATALOG.table, g=new THREE.Group();
+    const h=it.type==='column'?H:Math.min(it.h,cut?Math.max(it.h,0):it.h), hh=it.type==='column'?Hc:h;
+    const mat=new THREE.MeshStandardMaterial({color:new THREE.Color(c.color).convertSRGBToLinear(),roughness:0.75});
+    const w=it.w, d=it.d;
+    if(it.type==='shelf'||it.type==='gondola'){
+      const t=0.04, n=Math.max(3,Math.round(hh/0.42));
+      g.add(box(t,hh,d,mat,-w/2+t/2,hh/2,0), box(t,hh,d,mat,w/2-t/2,hh/2,0));
+      const pan=new THREE.MeshStandardMaterial({color:0xf2efe8,roughness:0.9});
+      if(it.type==='shelf') g.add(box(w,hh,0.02,pan,0,hh/2,d/2-0.01));
+      else g.add(box(w-t*2,hh,0.02,pan,0,hh/2,0));
+      for(let k=0;k<n;k++){ const y=0.08+k*(hh-0.1)/(n-1); g.add(box(w-t*2,0.025,d,mat,0,y,0)); }
+      // a few goods on shelves
+      const goods=[0xe85d4a,0x4a90d9,0x58b368,0xf2c14e,0x9b6bd1];
+      for(let k=0;k<n-1;k++){
+        const y=0.08+k*(hh-0.1)/(n-1)+0.0125, nn=Math.floor((w-0.1)/0.16);
+        for(let j=0;j<nn;j++){ if((j*7+k*3)%5===0) continue; const gh=0.12+((j+k)%3)*0.05;
+          const zs=it.type==='shelf'?[-0.05]:[-d/4,d/4];
+          zs.forEach(z=>g.add(box(0.12,gh,0.14,new THREE.MeshStandardMaterial({color:goods[(j+k)%5],roughness:0.6}),-w/2+0.1+j*0.16,y+gh/2,z)));
+        }
+      }
+    } else if(it.type==='fridge'){
+      g.add(box(w,hh,d,mat,0,hh/2,0));
+      const gl=box(w-0.08,hh-0.3,0.02,new THREE.MeshStandardMaterial({color:0xcfeefc,emissive:0x3a6f88,emissiveIntensity:0.35,transparent:true,opacity:0.8,roughness:0.1}),0,hh/2+0.05,-d/2-0.011);
+      g.add(gl);
+    } else if(it.type==='counter'){
+      g.add(box(w,hh-0.04,d,mat,0,(hh-0.04)/2,0));
+      g.add(box(w+0.04,0.04,d+0.04,new THREE.MeshStandardMaterial({color:0xe9e4da,roughness:0.4}),0,hh-0.02,0));
+      g.add(box(0.35,0.25,0.04,new THREE.MeshStandardMaterial({color:0x222222}),w/4,hh+0.15,0));
+    } else if(it.type==='table'){
+      g.add(box(w,0.05,d,mat,0,hh-0.025,0));
+      [[-1,-1],[1,-1],[-1,1],[1,1]].forEach(([sx,sz])=>g.add(box(0.05,hh-0.05,0.05,mat,sx*(w/2-0.05),(hh-0.05)/2,sz*(d/2-0.05))));
+    } else {
+      g.add(box(w,hh,d,mat,0,hh/2,0));
+    }
+    g.position.set(it.x,0,it.y); g.rotation.y=-it.rot*Math.PI/180;
+    if(sel&&sel.kind==='item'&&sel.id===it.id){
+      const hl=new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(w+0.04,hh+0.04,d+0.04)),new THREE.LineBasicMaterial({color:0x0d6bcb}));
+      hl.position.y=hh/2; g.add(hl);
+    }
+    group.add(g);
+  });
+
+  R3.sun.position.set(cx+span*0.6,span*1.6+6,cz+span*0.4); R3.sun.target.position.set(cx,0,cz);
+  if(!built){ built=true; camPreset('iso'); }
+}
+function centroid(){
+  let a=0,x=0,y=0; const p=S.pts;
+  for(let i=0;i<p.length;i++){ const q=p[i], r=p[(i+1)%p.length], f=q.x*r.y-r.x*q.y; a+=f; x+=(q.x+r.x)*f; y+=(q.y+r.y)*f; }
+  if(Math.abs(a)<1e-9) return {x:p[0].x,y:p[0].y};
+  return {x:x/(3*a),y:y/(3*a)};
+}
+function camPreset(k){
+  if(!R3) return;
+  const b=bounds(), cx=(b.x0+b.x1)/2, cz=(b.y0+b.y1)/2, span=Math.max(b.x1-b.x0,b.y1-b.y0,3);
+  const {camera,controls}=R3;
+  if(k==='top'){ camera.position.set(cx,span*1.9,cz+0.01); controls.target.set(cx,0,cz); }
+  else if(k==='front'){
+    const ws=walls(), sh=S.openings.find(o=>o.type==='shutter')||S.openings.find(o=>o.type==='door');
+    const w=sh?ws[sh.wall]:ws[0], t=sh?opRange(sh,w).reduce((a,b)=>a+b)/2:w.len/2;
+    const px=w.a.x+w.ux*t, pz=w.a.y+w.uy*t;
+    camera.position.set(px+w.nx*2.2,1.65,pz+w.ny*2.2); controls.target.set(px-w.nx*2.5,1.2,pz-w.ny*2.5);
+  } else { camera.position.set(cx+span*0.9,span*1.25+2,cz+span*1.15); controls.target.set(cx,0.6,cz); }
+  controls.update();
+}
+$$('[data-cam]').forEach(b=>b.onclick=()=>camPreset(b.dataset.cam));
+$('#cutBtn').onclick=e=>{ cut=!cut; e.currentTarget.setAttribute('aria-pressed',cut); build3DNow(); };
+$('#dimBtn').onclick=e=>{ showDims=!showDims; e.currentTarget.setAttribute('aria-pressed',showDims); build3DNow(); };
+
+/* downloads only work when the file is opened directly (not inside a sandboxed frame) */
+let topLevel=false; try{ topLevel=window.top===window.self; }catch(e){ topLevel=false; }
+$('#dlRow').hidden=!topLevel; $('#dlNote').hidden=topLevel;
+function saveBlob(blob,name){ const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; document.body.append(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); },1000); }
+$('#pngBtn').onclick=()=>{
+  if(stage.dataset.view==='plan') setView('split');
+  ensure3D(); build3D(); R3.renderer.render(R3.scene,R3.camera);
+  R3.renderer.domElement.toBlob(b=>saveBlob(b,(S.name||'shop')+'-3d.png'));
+};
+$('#glbBtn').onclick=()=>{
+  if(!THREE.GLTFExporter){ toast('匯出模組載入失敗'); return; }
+  ensure3D(); build3D();
+  new THREE.GLTFExporter().parse(R3.group,res=>saveBlob(new Blob([res],{type:'model/gltf-binary'}),(S.name||'shop')+'.glb'),{binary:true});
+};
+
+/* ======================= AR (WebXR) ======================= */
+let arActive=false;
+async function setupAR(){
+  const box=$('#arBox');
+  let ok=false;
+  try{ ok=!!(navigator.xr && await navigator.xr.isSessionSupported('immersive-ar')); }catch(e){ ok=false; }
+  if(ok && has3){
+    box.innerHTML=`<p>用手機鏡頭對準牆腳，逐個點擊牆角，自動計出每幅牆長度並生成平面。</p><button class="btn primary" id="arStart">開始 AR 量度</button>`;
+    $('#arStart').onclick=startAR;
+  } else {
+    box.innerHTML=`<p><b style="color:var(--ink)">呢部裝置未能用 AR 量度。</b> 要用 Android 手機 Chrome 直接開啟本程式嘅 HTTPS 網址（例如放上公司內網或 GitHub Pages）。</p>
+      <p>冇 AR 都可以：用雷射尺量每幅牆，然後撳「✎ 畫牆」，輸入長度再按方向鍵逐段畫出嚟。</p>`;
+  }
+}
+async function startAR(){
+  const overlay=$('#arOverlay');
+  let session;
+  try{
+    session=await navigator.xr.requestSession('immersive-ar',{requiredFeatures:['hit-test'],optionalFeatures:['dom-overlay'],domOverlay:{root:overlay}});
+  }catch(e){ toast('未能開啟 AR：'+(e.message||e)); return; }
+  arActive=true; overlay.hidden=false;
+  const renderer=new THREE.WebGLRenderer({antialias:true,alpha:true});
+  renderer.setPixelRatio(window.devicePixelRatio); renderer.setSize(window.innerWidth,window.innerHeight);
+  renderer.xr.enabled=true; renderer.xr.setReferenceSpaceType('local');
+  renderer.domElement.style.cssText='position:fixed;inset:0;z-index:90';
+  document.body.append(renderer.domElement);
+  const scene=new THREE.Scene(), camera=new THREE.PerspectiveCamera();
+  scene.add(new THREE.HemisphereLight(0xffffff,0x444444,1));
+  const reticle=new THREE.Mesh(new THREE.RingGeometry(0.06,0.085,32).rotateX(-Math.PI/2),new THREE.MeshBasicMaterial({color:0xf5c22e}));
+  reticle.matrixAutoUpdate=false; reticle.visible=false; scene.add(reticle);
+  const pts=[], markers=[];
+  let line=null, floorY=null, hitSource=null;
+  const lineMat=new THREE.LineBasicMaterial({color:0xf5c22e});
+  const redrawLine=()=>{
+    if(line){ scene.remove(line); line.geometry.dispose(); }
+    if(pts.length<2){ line=null; return; }
+    line=new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts.map(p=>new THREE.Vector3(p.x,floorY,p.z))),lineMat); scene.add(line);
+  };
+  const tmp=new THREE.Vector3();
+  const msg=()=>{
+    const n=pts.length;
+    $('#arMsg').textContent = n ? `已放 ${n} 個牆角。${n>=3?'可以按「完成」閉合。':'繼續點擊下一個牆角。'}` : '慢慢移動手機掃描地面，見到黃色圓圈後點擊畫面放置牆角。';
+  };
+  overlay.addEventListener('beforexrselect',e=>e.preventDefault());
+  session.addEventListener('select',()=>{
+    if(!reticle.visible) return;
+    tmp.setFromMatrixPosition(reticle.matrix);
+    if(floorY===null) floorY=tmp.y;
+    pts.push({x:tmp.x,z:tmp.z});
+    const m=new THREE.Mesh(new THREE.SphereGeometry(0.025,16,12),new THREE.MeshBasicMaterial({color:0xffffff}));
+    m.position.set(tmp.x,floorY,tmp.z); scene.add(m); markers.push(m);
+    redrawLine(); msg();
+  });
+  const end=()=>{ try{ session.end(); }catch(e){} };
+  $('#arUndo').onclick=()=>{ pts.pop(); const m=markers.pop(); if(m) scene.remove(m); redrawLine(); msg(); };
+  $('#arCancel').onclick=()=>{ pts.length=0; end(); };
+  $('#arDone').onclick=()=>{
+    if(pts.length<3){ $('#arMsg').textContent='最少要 3 個牆角。'; return; }
+    const x0=Math.min(...pts.map(p=>p.x)), z0=Math.min(...pts.map(p=>p.z));
+    const res=pts.map(p=>({x:+(p.x-x0).toFixed(3),y:+(p.z-z0).toFixed(3)}));
+    setRoom(res); commit(); end(); setTimeout(fit,300); toast('AR 量度完成，平面已建立');
+  };
+  session.addEventListener('end',()=>{
+    arActive=false; overlay.hidden=true; renderer.setAnimationLoop(null); renderer.domElement.remove(); renderer.dispose();
+  });
+  await renderer.xr.setSession(session);
+  const viewerSpace=await session.requestReferenceSpace('viewer');
+  hitSource=await session.requestHitTestSource({space:viewerSpace});
+  msg();
+  renderer.setAnimationLoop((t,frame)=>{
+    if(frame&&hitSource){
+      const ref=renderer.xr.getReferenceSpace(), hits=frame.getHitTestResults(hitSource);
+      if(hits.length){
+        const pose=hits[0].getPose(ref); reticle.visible=true; reticle.matrix.fromArray(pose.transform.matrix);
+        if(pts.length){ tmp.setFromMatrixPosition(reticle.matrix); const l=pts[pts.length-1]; $('#arDist').textContent=fmt(Math.hypot(tmp.x-l.x,tmp.z-l.z)); }
+        else $('#arDist').textContent='對準第一個牆角';
+      } else reticle.visible=false;
+    }
+    renderer.render(scene,camera);
+  });
+}
+
+/* ======================= boot ======================= */
+const ro=new ResizeObserver(()=>{ const first=!cv.width; resizePlan(); if(first) fit(); });
+ro.observe(cv);
+const mq=window.matchMedia('(prefers-color-scheme: dark)');
+const retheme=()=>{ drawPlan(); build3DNow(); };
+mq.addEventListener?.('change',retheme);
+new MutationObserver(retheme).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
+if(document.fonts) document.fonts.ready.then(()=>{ drawPlan(); build3DNow(); });
+
+setMode('select');
+setView(window.innerWidth<900?'plan':'split');
+renderPanel();
+setupAR();
+if(!has3) toast('3D 模組載入失敗，請檢查網絡');
+})();
+</script>
