@@ -593,6 +593,14 @@ function drawPlan(){
     if(on){
       const r=(it.rot%180===0);
       pill(`${fmt(it.w)} × ${fmt(it.d)}`,cx,cy+(r?d:w)/2+14,C.panel,C.sel);
+      // rotate handle
+      const hp=rotHandlePos(it), big=W<600;
+      ctx.strokeStyle=C.sel; ctx.lineWidth=1.5; ctx.setLineDash([3,3]);
+      ctx.beginPath(); ctx.moveTo(cx,cy); ctx.lineTo(hp.x,hp.y); ctx.stroke(); ctx.setLineDash([]);
+      ctx.beginPath(); ctx.arc(hp.x,hp.y,big?13:10,0,Math.PI*2); ctx.fillStyle=C.sel; ctx.fill();
+      ctx.lineWidth=2; ctx.strokeStyle=C.panel; ctx.stroke();
+      ctx.fillStyle='#fff'; ctx.font=`700 ${big?15:12}px sans-serif`; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText('↻',hp.x,hp.y+1);
+      if(drag&&drag.kind==='rotate') pill(`${it.rot}°`,hp.x,hp.y-(big?26:22),'#fff',C.sel);
     }
   });
 
@@ -640,8 +648,16 @@ function drawPlan(){
 const ptrs=new Map();
 let drag=null, pinch=null, gestureMoved=false, hadPinch=false;
 
+function rotHandlePos(it){
+  const [cx,cy]=W2S(it.x,it.y), a=it.rot*Math.PI/180, off=it.d/2*view.scale+(cv.clientWidth<600?34:28);
+  return {x:cx+Math.sin(a)*off, y:cy-Math.cos(a)*off};
+}
 function hitTest(sx, sy, touch){
   const R=touch?18:11, w=S2W(sx,sy);
+  if(sel&&sel.kind==='item'){
+    const it=S.items.find(x=>x.id===sel.id);
+    if(it){ const hp=rotHandlePos(it); if(Math.hypot(hp.x-sx,hp.y-sy)<=(touch?24:14)) return {kind:'rotate',id:it.id}; }
+  }
   for(let i=0;i<S.pts.length;i++){ const [x,y]=W2S(S.pts[i].x,S.pts[i].y); if(Math.hypot(x-sx,y-sy)<=R) return {kind:'vertex',i}; }
   const ws=walls();
   for(const o of S.openings){
@@ -709,8 +725,9 @@ cv.addEventListener('pointerdown', e=>{
   if(mode==='draw'){ drag={kind:'pan',sx:e.offsetX,sy:e.offsetY,ox:view.ox,oy:view.oy}; return; }
   const h=hitTest(e.offsetX,e.offsetY,touch);
   if(h){
-    sel = h.kind==='wall' ? {kind:'wall',i:h.i} : h;
-    if(h.kind==='item'){ const it=S.items.find(x=>x.id===h.id); drag={kind:'item',it,x0:it.x,y0:it.y,w0:w}; }
+    if(h.kind!=='rotate') sel = h.kind==='wall' ? {kind:'wall',i:h.i} : h;
+    if(h.kind==='rotate'){ const it=S.items.find(x=>x.id===h.id); drag={kind:'rotate',it}; }
+    else if(h.kind==='item'){ const it=S.items.find(x=>x.id===h.id); drag={kind:'item',it,x0:it.x,y0:it.y,w0:w}; }
     else if(h.kind==='vertex'){ const q=S.pts[h.i]; drag={kind:'vertex',i:h.i,x0:q.x,y0:q.y,w0:w}; }
     else if(h.kind==='opening'){ drag={kind:'opening',o:S.openings.find(x=>x.id===h.id)}; }
     else drag={kind:'pan',sx:e.offsetX,sy:e.offsetY,ox:view.ox,oy:view.oy};
@@ -729,12 +746,19 @@ cv.addEventListener('pointermove', e=>{
   }
   if(mode==='draw' && (!drag || !gestureMoved)){ hover=drawPoint(e.offsetX,e.offsetY); drawPlan(); }
   if(!drag){
-    if(mode==='select' && e.pointerType==='mouse'){ const h=hitTest(e.offsetX,e.offsetY,false); cv.style.cursor=h?(h.kind==='wall'?'pointer':'move'):'grab'; }
+    if(mode==='select' && e.pointerType==='mouse'){ const h=hitTest(e.offsetX,e.offsetY,false); cv.style.cursor=h?(h.kind==='wall'?'pointer':h.kind==='rotate'?'alias':'move'):'grab'; }
     else if(mode==='draw') cv.style.cursor='crosshair';
     return;
   }
   const w=S2W(e.offsetX,e.offsetY);
   if(drag.kind==='pan'){ if(!gestureMoved) return; view.ox=drag.ox+e.offsetX-drag.sx; view.oy=drag.oy+e.offsetY-drag.sy; drawPlan(); return; }
+  if(drag.kind==='rotate'){
+    const [cx,cy]=W2S(drag.it.x,drag.it.y);
+    let deg=Math.atan2(e.offsetX-cx,-(e.offsetY-cy))*180/Math.PI;
+    deg=((Math.round(deg)%360)+360)%360;
+    const m=Math.round(deg/45)*45; if(Math.abs(deg-m)<=4) deg=m%360;   // magnet to 0/45/90…
+    drag.it.rot=deg; gestureMoved=true; liveUpdate(); return;
+  }
   if(!gestureMoved) return;
   if(drag.kind==='item'){ drag.it.x=snap(drag.x0+w.x-drag.w0.x); drag.it.y=snap(drag.y0+w.y-drag.w0.y); }
   else if(drag.kind==='vertex'){
@@ -755,8 +779,8 @@ function endPointer(e){
   if(ptrs.size<2) pinch=null;
   if(ptrs.size>0) return;
   if(mode==='draw' && !gestureMoved && !hadPinch){ addDraft(drawPoint(e.offsetX,e.offsetY)); }
-  if(drag && drag.kind!=='pan' && gestureMoved) commit();
-  drag=null;
+  const d=drag; drag=null;
+  if(d && d.kind!=='pan' && gestureMoved) commit();
 }
 cv.addEventListener('pointerup', endPointer);
 cv.addEventListener('pointercancel', e=>{ ptrs.delete(e.pointerId); pinch=null; drag=null; });
@@ -776,7 +800,7 @@ cv.addEventListener('dblclick', e=>{
 let liveRaf=0;
 function liveUpdate(){
   if(liveRaf) return;
-  liveRaf=requestAnimationFrame(()=>{ liveRaf=0; drawPlan(); renderStats(); renderWalls(); schedule3D(); });
+  liveRaf=requestAnimationFrame(()=>{ liveRaf=0; drawPlan(); renderStats(); renderWalls(); renderSelBar(); schedule3D(); });
 }
 
 function setMode(m){
