@@ -69,6 +69,12 @@ button{cursor:pointer}
 .drawbar .arrows{display:inline-flex;gap:4px}
 .drawbar .arrows button{width:34px;height:32px;border:1px solid var(--line);border-radius:7px;background:var(--bg);font-size:15px}
 .drawbar p{margin:0;font-size:12px;color:var(--muted);flex-basis:100%}
+.selbar{position:absolute;left:10px;bottom:10px;right:10px;z-index:3;display:flex;flex-wrap:wrap;align-items:center;gap:6px;
+  background:var(--panel);border:1px solid var(--sel);border-radius:12px;padding:7px 8px;box-shadow:0 6px 20px rgba(0,0,0,.14);width:max-content;max-width:calc(100% - 20px)}
+.selbar b{font-size:13px;padding:0 4px;color:var(--sel)}
+.selbar button{border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:7px 11px;font-size:13.5px;font-variant-numeric:tabular-nums}
+.selbar button.del{color:var(--danger)}
+@media (max-width:900px){ .selbar{bottom:64px} .selbar button{padding:9px 12px;font-size:15px} }
 .jump{display:none;position:fixed;z-index:20;right:max(14px,env(safe-area-inset-right,0px));bottom:calc(14px + env(safe-area-inset-bottom,0px));
   border:0;border-radius:999px;padding:11px 16px;font-size:14px;font-weight:500;background:var(--ink);color:var(--panel);box-shadow:0 6px 18px rgba(0,0,0,.25)}
 .panel-grip{display:none}
@@ -183,6 +189,14 @@ textarea#io{width:100%;min-height:110px;border:1px solid var(--line);border-radi
       </div>
       <canvas id="plan"></canvas>
       <div class="scale-note" id="scaleNote"></div>
+      <div class="selbar" id="selBar" hidden>
+        <b id="sbName"></b>
+        <button id="sbRotL" title="逆時針轉 90°">↺ 90°</button>
+        <button id="sbRotR" title="順時針轉 90°">↻ 90°</button>
+        <button id="sbRot15" title="順時針轉 15°">↻ 15°</button>
+        <button id="sbDup">複製</button>
+        <button id="sbDel" class="del">刪除</button>
+      </div>
       <div class="drawbar" id="drawBar" hidden>
         <label class="fld" style="gap:6px"><span style="min-width:auto">下一段</span><input id="segLen" type="number" inputmode="decimal" step="0.01" value="3"><em id="segUnit">m</em></label>
         <div class="arrows" role="group" aria-label="方向">
@@ -856,7 +870,7 @@ function renderInspector(){
     const btns=document.createElement('div'); btns.className='btnrow';
     const rot=document.createElement('button'); rot.className='btn'; rot.textContent='旋轉 90°'; rot.onclick=()=>{ t.rot=(t.rot+90)%360; commit(); };
     const dup=document.createElement('button'); dup.className='btn'; dup.textContent='複製一件';
-    dup.onclick=()=>{ const c2={...t,id:uid()}; const a=t.rot*Math.PI/180; c2.x=snap(t.x+Math.cos(a)*t.w); c2.y=snap(t.y+Math.sin(a)*t.w); S.items.push(c2); sel={kind:'item',id:c2.id}; commit(); };
+    dup.onclick=()=>dupItem(t);
     btns.append(rot,dup,del);
     body.append(nm,r1,r2,btns);
   } else if(sel.kind==='opening'){
@@ -904,7 +918,30 @@ function renderRoom(){
   }
 }
 let tplW=null, tplD=null;
-function renderPanel(){ renderStats(); renderInspector(); renderWalls(); renderRoom();
+function dupItem(t){
+  const c2={...t,id:uid()}; const a=t.rot*Math.PI/180;
+  c2.x=snap(t.x+Math.cos(a)*t.w); c2.y=snap(t.y+Math.sin(a)*t.w);
+  S.items.push(c2); sel={kind:'item',id:c2.id}; commit();
+}
+function rotateSel(deg){
+  const t=selTarget(); if(!t||sel.kind!=='item') return;
+  t.rot=(((t.rot+deg)%360)+360)%360; commit();
+}
+function renderSelBar(){
+  const bar=$('#selBar'), t=selTarget();
+  const show=!!t && (sel.kind==='item'||sel.kind==='opening') && mode==='select';
+  bar.hidden=!show; $('#scaleNote').hidden=show;
+  if(!show) return;
+  const isItem=sel.kind==='item';
+  ['#sbRotL','#sbRotR','#sbRot15','#sbDup'].forEach(s=>$(s).hidden=!isItem);
+  $('#sbName').textContent=isItem?`${t.label||CATALOG[t.type].name} · ${t.rot}°`:OPENINGS[t.type].name;
+}
+$('#sbRotL').onclick=()=>rotateSel(-90);
+$('#sbRotR').onclick=()=>rotateSel(90);
+$('#sbRot15').onclick=()=>rotateSel(15);
+$('#sbDup').onclick=()=>{ const t=selTarget(); if(t&&sel.kind==='item') dupItem(t); };
+$('#sbDel').onclick=deleteSel;
+function renderPanel(){ renderStats(); renderInspector(); renderWalls(); renderRoom(); renderSelBar();
   $('#projName').value=S.name||'';
   $$('#unitSeg button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.u===S.unit));
   $('#segUnit').textContent=uLabel();
